@@ -1,5 +1,33 @@
-"""LLM provider abstractions for MathLens.
+"""LLM provider abstraction for MathLens."""
 
-Provides the LLMProvider protocol, shared types, and the task-aware
-ProviderRouter that selects the best available provider per task type.
-"""
+from __future__ import annotations
+
+from mathlens.config.settings import MathLensSettings
+from mathlens.providers.api import AnthropicAPIProvider
+from mathlens.providers.base import LLMProvider
+from mathlens.providers.cli_sub import CLISubprocessProvider
+from mathlens.providers.local import OllamaProvider
+from mathlens.providers.router import ProviderRouter
+
+
+def build_providers(settings: MathLensSettings) -> dict[str, LLMProvider]:
+    providers: dict[str, LLMProvider] = {}
+    providers["local"] = OllamaProvider(
+        model=settings.provider.local.model,
+        endpoint=settings.provider.local.endpoint,
+    )
+    providers["cli"] = CLISubprocessProvider(
+        backend=settings.provider.cli.backend,
+        timeout=settings.provider.cli.timeout,
+    )
+    api = AnthropicAPIProvider.from_env(model=settings.provider.api.model)
+    if api is not None:
+        providers["api"] = api
+    return providers
+
+
+def build_router(settings: MathLensSettings, providers: dict[str, LLMProvider]) -> ProviderRouter:
+    return ProviderRouter(providers=providers, fallback_chain=settings.provider.fallback_chain)
+
+
+__all__ = ["LLMProvider", "ProviderRouter", "build_providers", "build_router"]
