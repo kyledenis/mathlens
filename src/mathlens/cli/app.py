@@ -42,3 +42,7 @@ try:
     from mathlens.cli import doctor as _doctor  # noqa: F401, E402
 except (ImportError, AttributeError):
     pass
+try:
+    from mathlens.cli import knowledge as _knowledge  # noqa: F401, E402
+except (ImportError, AttributeError):
+    pass
