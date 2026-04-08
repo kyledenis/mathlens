@@ -100,3 +100,20 @@ def doctor(
         console.print(
             "MathLens degrades gracefully — missing optional tools only affect specific features."
         )
+
+    if fix:
+        from pathlib import Path as _Path
+        from mathlens.workspace.repair import WorkspaceRepair
+        from mathlens.config.settings import MathLensSettings
+
+        settings = MathLensSettings.from_toml(None)
+        repair_tool = WorkspaceRepair(_Path(settings.workspace.path).expanduser())
+        actions = repair_tool.fix()
+        if actions:
+            console.print()
+            console.print("[bold]Repairs:[/bold]")
+            for action in actions:
+                console.print(f"  [green]✓[/green] {action}")
+        else:
+            console.print()
+            console.print("  [dim]No workspace issues to fix[/dim]")
