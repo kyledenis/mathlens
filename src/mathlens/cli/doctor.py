@@ -106,7 +106,8 @@ def doctor(
         from mathlens.workspace.repair import WorkspaceRepair
         from mathlens.config.settings import MathLensSettings
 
-        settings = MathLensSettings.from_toml(None)
+        config_path = _Path.home() / ".config" / "mathlens" / "config.toml"
+        settings = MathLensSettings.from_toml(config_path)
         repair_tool = WorkspaceRepair(_Path(settings.workspace.path).expanduser())
         actions = repair_tool.fix()
         if actions:
