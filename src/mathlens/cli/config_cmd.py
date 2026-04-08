@@ -1,0 +1,1 @@
+"""mathlens config — configuration management."""
