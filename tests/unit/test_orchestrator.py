@@ -370,3 +370,73 @@ async def test_output_format_passed_to_planner(
     mock_planner.plan.assert_called_once_with(
         "Prove the Pythagorean Theorem", OutputFormat.frames
     )
+
+
+# ---------------------------------------------------------------------------
+# Search index tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_search_index() -> MagicMock:
+    index = MagicMock()
+    index.index_exploration = MagicMock()
+    return index
+
+
+@pytest.fixture
+def orchestrator_with_index(
+    mock_planner: AsyncMock,
+    mock_verifier: AsyncMock,
+    mock_visualizer: AsyncMock,
+    mock_summarizer: AsyncMock,
+    mock_store: MagicMock,
+    mock_search_index: MagicMock,
+) -> Orchestrator:
+    return Orchestrator(
+        planner=mock_planner,
+        verifier=mock_verifier,
+        visualizer=mock_visualizer,
+        summarizer=mock_summarizer,
+        store=mock_store,
+        search_index=mock_search_index,
+    )
+
+
+@pytest.mark.asyncio
+async def test_index_result_called_on_success(
+    orchestrator_with_index: Orchestrator,
+    mock_search_index: MagicMock,
+    plan: ExplorationPlan,
+) -> None:
+    """SearchIndex.index_exploration must be called after a successful pipeline run."""
+    await orchestrator_with_index.run(
+        query="Prove the Pythagorean Theorem",
+        mode=PipelineMode.explore,
+    )
+
+    mock_search_index.index_exploration.assert_called_once_with(
+        plan.slug, mock_search_index.index_exploration.call_args[0][1]
+    )
+
+
+@pytest.mark.asyncio
+async def test_index_result_called_on_refuted(
+    orchestrator_with_index: Orchestrator,
+    mock_verifier: AsyncMock,
+    mock_search_index: MagicMock,
+    plan: ExplorationPlan,
+) -> None:
+    """SearchIndex.index_exploration must also be called on the REFUTED early-return path."""
+    mock_verifier.verify = AsyncMock(
+        return_value=_make_verification(VerificationStatus.refuted)
+    )
+
+    await orchestrator_with_index.run(
+        query="Prove a false claim",
+        mode=PipelineMode.explore,
+    )
+
+    mock_search_index.index_exploration.assert_called_once_with(
+        plan.slug, mock_search_index.index_exploration.call_args[0][1]
+    )

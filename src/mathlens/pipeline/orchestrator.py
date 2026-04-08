@@ -22,6 +22,7 @@ from mathlens.pipeline.planner import Planner
 from mathlens.pipeline.summarizer import Summarizer
 from mathlens.pipeline.verifier import Verifier
 from mathlens.pipeline.visualizer import Visualizer
+from mathlens.workspace.search import SearchIndex
 from mathlens.workspace.store import WorkspaceStore
 
 
@@ -57,12 +58,14 @@ class Orchestrator:
         visualizer: Visualizer,
         summarizer: Summarizer,
         store: WorkspaceStore,
+        search_index: Optional[SearchIndex] = None,
     ) -> None:
         self._planner = planner
         self._verifier = verifier
         self._visualizer = visualizer
         self._summarizer = summarizer
         self._store = store
+        self._search_index = search_index
 
     # ------------------------------------------------------------------
     # Public interface
@@ -107,6 +110,7 @@ class Orchestrator:
         # ------------------------------------------------------------------
         if verification.should_halt:
             self._store.set_status(plan.slug, StageStatus.completed)
+            self._index_result(meta)
             return ExplorationResult(
                 plan=plan,
                 verification=verification,
@@ -129,6 +133,7 @@ class Orchestrator:
         summary = await self._run_summarization(plan, verification)
         self._store.complete_stage(plan.slug, PipelineStage.summarization)
         self._store.set_status(plan.slug, StageStatus.completed)
+        self._index_result(meta)
 
         return ExplorationResult(
             plan=plan,
@@ -138,6 +143,19 @@ class Orchestrator:
             meta=meta,
             duration_seconds=monotonic() - start,
         )
+
+    # ------------------------------------------------------------------
+    # Search index
+    # ------------------------------------------------------------------
+
+    def _index_result(self, meta: ExplorationMeta) -> None:
+        if self._search_index is None:
+            return
+        try:
+            ws_dir = self._store.path_for(meta.slug)
+            self._search_index.index_exploration(meta.slug, ws_dir)
+        except Exception:
+            logger.warning("Failed to index exploration %s", meta.slug, exc_info=True)
 
     # ------------------------------------------------------------------
     # Internal stage runners with error isolation

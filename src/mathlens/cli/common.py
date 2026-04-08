@@ -12,6 +12,7 @@ from mathlens.pipeline.verifier import Verifier
 from mathlens.pipeline.visualizer import Visualizer
 from mathlens.pipeline.summarizer import Summarizer
 from mathlens.providers import build_providers, build_router
+from mathlens.workspace.search import SearchIndex
 from mathlens.workspace.store import WorkspaceStore
 
 
@@ -57,6 +58,7 @@ def build_pipeline(settings: MathLensSettings) -> Orchestrator:
 
     workspace_root = Path(settings.workspace.path).expanduser()
     store = WorkspaceStore(root=workspace_root)
+    search_index = SearchIndex(workspace_root / "index.db")
 
     default_name = settings.provider.default
     if default_name in providers:
@@ -80,4 +82,5 @@ def build_pipeline(settings: MathLensSettings) -> Orchestrator:
         visualizer=visualizer,
         summarizer=summarizer,
         store=store,
+        search_index=search_index,
     )
