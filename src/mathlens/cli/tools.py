@@ -82,14 +82,13 @@ def prove(
 # ---------------------------------------------------------------------------
 
 
-@app.command()
-def viz(
-    description: str = typer.Argument(..., help="Math description to visualize."),
-    provider: Optional[str] = typer.Option(None, "--provider", "-p", help="LLM provider: api, cli, or local."),
-    format: Optional[str] = typer.Option(None, "--format", "-f", help="Output format: video, frames, or diagram."),
-    local: bool = typer.Option(False, "--local", help="Shorthand for --provider local."),
+def _run_viz_command(
+    description: str,
+    provider: Optional[str],
+    format: Optional[str],
+    local: bool,
 ) -> None:
-    """Visualize a math description (skips verification)."""
+    """Shared implementation for viz/vis."""
     try:
         settings = MathLensSettings.from_toml(_CONFIG_PATH)
         apply_flag_overrides(settings, provider=provider, local=local, format=format)
@@ -101,28 +100,26 @@ def viz(
         raise typer.Exit(code=1)
 
 
-# ---------------------------------------------------------------------------
-# vis  (Australian/British spelling alias — identical to viz)
-# ---------------------------------------------------------------------------
-
-
-@app.command(name="vis")
+@app.command()
 def vis(
     description: str = typer.Argument(..., help="Math description to visualize."),
     provider: Optional[str] = typer.Option(None, "--provider", "-p", help="LLM provider: api, cli, or local."),
     format: Optional[str] = typer.Option(None, "--format", "-f", help="Output format: video, frames, or diagram."),
     local: bool = typer.Option(False, "--local", help="Shorthand for --provider local."),
 ) -> None:
-    """Visualize a math description (alias for viz; skips verification)."""
-    try:
-        settings = MathLensSettings.from_toml(_CONFIG_PATH)
-        apply_flag_overrides(settings, provider=provider, local=local, format=format)
-        result = run_viz(description, settings)
-        if result.visualization is not None:
-            console.print(f"[cyan]Output:[/cyan] {result.visualization.output_path}")
-    except Exception as exc:
-        console.print(format_error(str(exc)))
-        raise typer.Exit(code=1)
+    """Visualize a math concept (also available as 'viz')."""
+    _run_viz_command(description, provider, format, local)
+
+
+@app.command(name="viz", hidden=True)
+def viz(
+    description: str = typer.Argument(..., help="Math description to visualize."),
+    provider: Optional[str] = typer.Option(None, "--provider", "-p"),
+    format: Optional[str] = typer.Option(None, "--format", "-f"),
+    local: bool = typer.Option(False, "--local"),
+) -> None:
+    """Alias for vis."""
+    _run_viz_command(description, provider, format, local)
 
 
 # ---------------------------------------------------------------------------
