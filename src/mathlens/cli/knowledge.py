@@ -38,7 +38,7 @@ def history(
         console.print("[dim]No explorations yet.[/dim]")
         return
 
-    table = Table(show_header=True, header_style="bold", box=box.ROUNDED)
+    table = Table(show_header=True, header_style="bold", box=box.ROUNDED, border_style="dim")
     table.add_column("Topic")
     table.add_column("Mode")
     table.add_column("Status")
@@ -77,7 +77,7 @@ def search(
         console.print("[dim]No results.[/dim]")
         return
 
-    table = Table(show_header=True, header_style="bold", box=box.ROUNDED)
+    table = Table(show_header=True, header_style="bold", box=box.ROUNDED, border_style="dim")
     table.add_column("Topic")
     table.add_column("Match")
 

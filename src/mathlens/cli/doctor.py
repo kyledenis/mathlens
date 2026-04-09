@@ -152,6 +152,7 @@ def doctor(
         show_header=True,
         header_style="bold",
         box=box.ROUNDED,
+        border_style="dim",
     )
     table.add_column("Component", style="bold")
     table.add_column("Status", justify="center")

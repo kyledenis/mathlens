@@ -53,7 +53,7 @@ def config_show(
     """Display current configuration as a table."""
     settings = _load(config_path)
 
-    table = Table(title="MathLens Configuration", show_header=True, header_style="bold cyan", box=box.ROUNDED)
+    table = Table(title="MathLens Configuration", show_header=True, header_style="bold cyan", box=box.ROUNDED, border_style="dim")
     table.add_column("Key", style="bold")
     table.add_column("Value")
 
@@ -113,7 +113,7 @@ def config_diff(
         console.print("No changes from defaults.")
         return
 
-    table = Table(title="Configuration Diff", show_header=True, header_style="bold yellow", box=box.ROUNDED)
+    table = Table(title="Configuration Diff", show_header=True, header_style="bold yellow", box=box.ROUNDED, border_style="dim")
     table.add_column("Key", style="bold")
     table.add_column("Default")
     table.add_column("Current", style="green")
