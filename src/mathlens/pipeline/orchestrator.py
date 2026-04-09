@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from time import monotonic
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from mathlens.models import (
     ExplorationMeta,
@@ -77,21 +81,37 @@ class Orchestrator:
         mode: PipelineMode,
         output_format: Optional[OutputFormat] = None,
         skip_verification: bool = False,
+        on_stage: Callable[[PipelineStage, str], None] | None = None,
     ) -> ExplorationResult:
-        """Run the full pipeline for *query* and return an ExplorationResult."""
+        """Run the full pipeline for *query* and return an ExplorationResult.
+
+        *on_stage* is called with ``(stage, event)`` where *event* is
+        ``"start"`` or ``"done"``.  The CLI uses this to drive a spinner.
+        """
+
+        def _emit(stage: PipelineStage, event: str) -> None:
+            if on_stage is not None:
+                try:
+                    on_stage(stage, event)
+                except Exception:
+                    pass  # never let a UI callback break the pipeline
+
         start = monotonic()
 
         # ------------------------------------------------------------------
         # Stage 1: Planning
         # ------------------------------------------------------------------
+        _emit(PipelineStage.planning, "start")
         plan = await self._planner.plan(query, output_format)
         meta = self._store.create(plan, mode)
         self._store.complete_stage(plan.slug, PipelineStage.planning)
         self._store.set_status(plan.slug, StageStatus.running)
+        _emit(PipelineStage.planning, "done")
 
         # ------------------------------------------------------------------
         # Stage 2: Verification
         # ------------------------------------------------------------------
+        _emit(PipelineStage.verification, "start")
         if skip_verification:
             verification = VerificationResult(
                 status=VerificationStatus.skipped,
@@ -104,6 +124,7 @@ class Orchestrator:
 
         self._store.save_stage_result(plan.slug, PipelineStage.verification, verification)
         self._store.complete_stage(plan.slug, PipelineStage.verification)
+        _emit(PipelineStage.verification, "done")
 
         # ------------------------------------------------------------------
         # CRITICAL INVARIANT: REFUTED → halt immediately
@@ -123,15 +144,19 @@ class Orchestrator:
         # ------------------------------------------------------------------
         # Stage 3: Visualization
         # ------------------------------------------------------------------
+        _emit(PipelineStage.visualization, "start")
         visualization = await self._run_visualization(plan, meta, mode, verification)
         self._store.save_stage_result(plan.slug, PipelineStage.visualization, visualization)
         self._store.complete_stage(plan.slug, PipelineStage.visualization)
+        _emit(PipelineStage.visualization, "done")
 
         # ------------------------------------------------------------------
         # Stage 4: Summarization
         # ------------------------------------------------------------------
+        _emit(PipelineStage.summarization, "start")
         summary = await self._run_summarization(plan, verification)
         self._store.complete_stage(plan.slug, PipelineStage.summarization)
+        _emit(PipelineStage.summarization, "done")
         self._store.set_status(plan.slug, StageStatus.completed)
         self._index_result(meta)
 

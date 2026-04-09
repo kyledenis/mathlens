@@ -11,12 +11,21 @@ import typer
 from mathlens.cli.app import app
 from mathlens.cli.common import apply_flag_overrides, build_pipeline
 from mathlens.config.settings import MathLensSettings
-from mathlens.models import Badge, OutputFormat, PipelineMode
+from mathlens.models import Badge, OutputFormat, PipelineMode, PipelineStage
 from mathlens.pipeline.orchestrator import ExplorationResult
 from mathlens.ui.console import console, format_badge, format_duration, format_topic_header
 from mathlens.ui.errors import format_error, format_refuted_error
+from mathlens.ui.progress import PipelineProgress
 
 _CONFIG_PATH = Path.home() / ".config" / "mathlens" / "config.toml"
+_progress = PipelineProgress()
+
+_STAGE_ORDER = [
+    PipelineStage.planning,
+    PipelineStage.verification,
+    PipelineStage.visualization,
+    PipelineStage.summarization,
+]
 
 
 def run_explore(
@@ -24,20 +33,57 @@ def run_explore(
     settings: MathLensSettings,
     format_override: Optional[str] = None,
     no_verify: bool = False,
+    mode: PipelineMode = PipelineMode.explore,
+    quiet: bool = False,
 ) -> ExplorationResult:
-    """Build pipeline and run the explore mode, returning an ExplorationResult."""
+    """Build pipeline and run, showing a live spinner for each stage."""
     orchestrator = build_pipeline(settings)
     output_format: Optional[OutputFormat] = None
     if format_override is not None:
         output_format = OutputFormat(format_override)
-    return asyncio.run(
-        orchestrator.run(
+
+    if quiet:
+        return asyncio.run(
+            orchestrator.run(
+                query=query,
+                mode=mode,
+                output_format=output_format,
+                skip_verification=no_verify,
+            )
+        )
+
+    # Run with live progress spinner
+    stage_starts: dict[PipelineStage, float] = {}
+    result_holder: list[ExplorationResult] = []
+    exception_holder: list[Exception] = []
+
+    import time
+
+    def on_stage(stage: PipelineStage, event: str) -> None:
+        if event == "start":
+            stage_starts[stage] = time.monotonic()
+            status.update(f"  {_progress.format_stage_start(stage)}")
+        elif event == "done":
+            elapsed = time.monotonic() - stage_starts.get(stage, time.monotonic())
+            console.print(_progress.format_stage_done(stage, elapsed))
+
+    async def _run() -> ExplorationResult:
+        return await orchestrator.run(
             query=query,
-            mode=PipelineMode.explore,
+            mode=mode,
             output_format=output_format,
             skip_verification=no_verify,
+            on_stage=on_stage,
         )
-    )
+
+    console.print()
+    with console.status("  Initializing...", spinner="dots") as status:
+        try:
+            result = asyncio.run(_run())
+        except Exception as exc:
+            raise
+
+    return result
 
 
 def display_result(result: ExplorationResult) -> None:
@@ -99,7 +145,7 @@ def explore(
             no_open=no_open,
             quiet=quiet,
         )
-        result = run_explore(query, settings, format_override=format, no_verify=no_verify)
+        result = run_explore(query, settings, format_override=format, no_verify=no_verify, quiet=quiet)
         display_result(result)
     except Exception as exc:
         console.print(format_error(str(exc)))
