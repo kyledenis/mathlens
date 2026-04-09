@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import platform
+import random
 import shutil
 import subprocess
 import sys
@@ -14,6 +15,46 @@ from rich.table import Table
 
 from mathlens.cli.app import app
 from mathlens.ui.console import console
+
+_SUGGESTIONS = [
+    # Calculus & Analysis
+    "why does the harmonic series diverge",
+    "prove the fundamental theorem of calculus",
+    "why does the sum of 1/n^2 converge to pi^2/6",
+    "visualize the epsilon-delta definition of a limit",
+    "how does Taylor series approximate sin(x)",
+    # Linear Algebra
+    "what do eigenvalues geometrically represent",
+    "why is the determinant the volume scaling factor",
+    "visualize singular value decomposition",
+    "how does a matrix transform the unit circle",
+    "prove that orthogonal matrices preserve distances",
+    # Number Theory & Discrete
+    "why are there infinitely many primes",
+    "visualize the Sieve of Eratosthenes",
+    "prove there is no largest prime number",
+    "what makes Euler's totient function multiplicative",
+    # Abstract Algebra & Topology
+    "why is the square root of 2 irrational",
+    "visualize group actions on a polygon",
+    "what does a Mobius strip look like in 3D",
+    "why can't you comb a hairy ball flat",
+    # Probability & Applied
+    "visualize the central limit theorem",
+    "why does e appear in compound interest",
+    "prove the Cauchy-Schwarz inequality",
+    "how does gradient descent find minima",
+    # Gems
+    "why does e^(i*pi) + 1 = 0",
+    "prove the Pythagorean theorem visually",
+    "what is the Banach-Tarski paradox",
+    "visualize Fourier series building a square wave",
+    "why is 0.999... exactly equal to 1",
+]
+
+
+def _random_suggestion() -> str:
+    return random.choice(_SUGGESTIONS)
 
 
 class _Check(NamedTuple):
@@ -171,7 +212,7 @@ def doctor(
         console.print()
         console.print("  [green]All checks passed.[/green] Ready to go.")
         console.print()
-        console.print('  [dim]Try:[/dim] mathlens explore "why does e^(i*pi) = -1"')
+        console.print(f"  [dim]Try:[/dim] mathlens explore \"{_random_suggestion()}\"")
     else:
         console.print()
         console.print("  [bold]Next steps:[/bold]")
