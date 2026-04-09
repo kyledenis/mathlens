@@ -129,7 +129,7 @@ def config_diff(
     table, panel = make_table("Changes from Defaults", [("Setting", "cyan"), ("Default", "dim"), ("Current", None)])
 
     for dot_path, info in changes.items():
-        table.add_row(f"  {dot_path}", str(info["default"]), f"[green]{info['current']}[/green]")
+        table.add_row(dot_path, str(info["default"]), f"[green]{info['current']}[/green]")
 
     console.print(panel)
 

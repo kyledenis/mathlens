@@ -45,7 +45,7 @@ def deep(
     quiet: bool = typer.Option(False, "--quiet", help="Suppress non-essential output."),
     no_open: bool = typer.Option(False, "--no-open", help="Do not open the output file when done."),
 ) -> None:
-    """Deep-dive a math topic at production quality: plan -> verify -> visualize -> summarize."""
+    """Deep-dive a math topic at production quality: plan → verify → visualize → summarize."""
     install_signal_handlers()
     try:
         settings = MathLensSettings.from_toml(_CONFIG_PATH)

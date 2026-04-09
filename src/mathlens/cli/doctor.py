@@ -10,6 +10,8 @@ import sys
 from typing import NamedTuple
 
 import typer
+from rich import box
+
 from mathlens.cli.app import app
 from mathlens.ui.console import console, make_table
 

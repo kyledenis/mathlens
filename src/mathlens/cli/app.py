@@ -8,6 +8,7 @@ app = typer.Typer(
     help="Verify, then visualize. Learn math you can trust.",
     no_args_is_help=True,
     pretty_exceptions_enable=False,
+    add_completion=False,
 )
 
 

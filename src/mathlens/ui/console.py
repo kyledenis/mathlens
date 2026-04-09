@@ -19,10 +19,11 @@ def make_table(title: str, columns: list[tuple[str, str | None]]) -> tuple[Table
     """
     table = Table(
         show_header=True,
-        header_style="bold",
-        box=None,           # no table border — the Panel provides it
+        header_style="bold dim",
+        box=None,             # no table border — the Panel provides it
         expand=True,
         padding=(0, 1),
+        show_edge=False,
     )
     for header, style in columns:
         table.add_column(header, style=style or "")
