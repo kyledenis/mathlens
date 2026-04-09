@@ -9,13 +9,19 @@ proved and what has not.
 
 ---
 
-## Quick start
+## Quick Start
 
 ```bash
-pip install mathlens
-mathlens doctor                                 # check dependencies
-mathlens explore "Pythagorean theorem"          # verify and visualize
+pip install mathlens                           # install
+mathlens doctor                                # check dependencies
+mathlens doctor --install                      # auto-install missing deps
+mathlens config profile personal               # use Claude subscription (no API billing)
+mathlens explore "why does the harmonic series diverge"
 ```
+
+`mathlens doctor` detects your platform (macOS / Linux / Windows) and provides
+the exact install commands for anything that is missing. `--install` attempts to
+run them automatically.
 
 ---
 
@@ -23,34 +29,45 @@ mathlens explore "Pythagorean theorem"          # verify and visualize
 
 | Command | Description |
 |---|---|
-| `explore <query>` | Plan, verify, visualize, and summarize a math topic (medium quality). |
-| `deep <query>` | Same pipeline at production quality with a longer verification timeout. |
-| `prove <statement>` | Verify a single mathematical statement with Lean 4. |
-| `viz <description>` | Visualize a math description without running verification. |
-| `vis <description>` | Alias for `viz` (British/Australian spelling). |
-| `history` | List past explorations stored in the workspace. |
-| `search <query>` | Full-text search across past explorations. |
-| `show <topic>` | Display details and artifacts for a past exploration. |
-| `config show` | Print current configuration as a table. |
-| `doctor` | Check that required and optional dependencies are present. |
+| `mathlens explore <query>` | Plan, verify, visualize, and summarize (medium quality). |
+| `mathlens deep <query>` | Same pipeline at production quality. |
+| `mathlens prove <statement>` | Verify a single mathematical statement with Lean 4. |
+| `mathlens viz <description>` | Visualize without verification. |
+| `mathlens vis <description>` | Alias for `viz` (AU/UK spelling). |
+| `mathlens history` | List past explorations. |
+| `mathlens search <query>` | Full-text search across past explorations. |
+| `mathlens show <topic>` | View details and artifacts for a past exploration. |
+| `mathlens config show` | Print current configuration. |
+| `mathlens config set <key> <value>` | Change a setting. |
+| `mathlens config profile <name>` | Apply a named profile. |
+| `mathlens config diff` | Show what differs from defaults. |
+| `mathlens doctor` | Check dependencies. |
+| `mathlens doctor --install` | Auto-install missing dependencies. |
+| `mathlens doctor --fix` | Repair workspace issues (stale locks, tmp files). |
 
-### Common flags
+### Flags
+
+Every config value is overridable per-run. The config file sets defaults; flags
+override for a single invocation.
 
 ```
---provider, -p     LLM provider: api, cli, or local
---model, -m        Model name override
---local            Shorthand for --provider local
---format, -f       Output format: video, frames, or diagram
---quality, -q      Render quality: low, medium, high, production
---no-verify        Skip formal verification
---no-open          Do not open the output file when done
---quiet            Suppress non-essential output
---json             Output result as JSON (explore only)
+--provider     LLM provider: api, cli, or local
+--model        Model name override
+--local        Shorthand for --provider local
+--format       Output format: video, frames, or diagram
+--quality      Render quality: low, medium, high, production
+--no-verify    Skip formal verification
+--verify-timeout  Override Lean timeout (seconds)
+--no-open      Do not open the output file when done
+--quiet        Minimal output
+--json         Output result as JSON (explore only)
+--retry        Resume from last checkpoint
+--force        Ignore cache, start fresh
 ```
 
 ---
 
-## How it works
+## How It Works
 
 ```
 question
@@ -73,7 +90,7 @@ summarize   LLM writes key insights and further-reading suggestions.
 
 ---
 
-## Verification badges
+## Verification Badges
 
 Every output is tagged with one of four badges.
 
@@ -81,77 +98,61 @@ Every output is tagged with one of four badges.
 |---|---|
 | `✓ Verified` | All theorem statements were accepted by Lean 4. |
 | `⚠ Unverified` | Lean could not construct a proof but found no counter-example. |
-| `✗ Refuted` | Lean found a counter-example or a logical error. The pipeline halts. |
-| `○ Not checked` | Verification was skipped (e.g. `--no-verify` or `viz` command). |
+| `✗ Refuted` | Lean found a counter-example or a logical error. **Visualization halted.** |
+| `○ Not checked` | Verification was skipped (`--no-verify` or `viz` command). |
 
-When a result is **Refuted** the visualization is suppressed and the failure reason
-is printed. You can still produce a visualization without verification using `viz`.
+When a result is **Refuted** the visualization is suppressed and the failure
+reason is printed. This is the core safety invariant — MathLens never shows
+wrong math as a visualization.
 
 ---
 
 ## Configuration
 
-The config file lives at `~/.config/mathlens/config.toml` and is created with
-defaults on first use.
+Config lives at `~/.config/mathlens/config.toml`, created with defaults on first use.
 
 ```bash
 mathlens config show                            # print all settings
-mathlens config set provider.default api        # change a value
+mathlens config set provider.default cli        # change a value
 mathlens config diff                            # show what differs from defaults
 mathlens config profile personal                # apply a named profile
 mathlens config edit                            # open in $EDITOR
+mathlens config reset                           # restore defaults
 ```
 
-### Settings reference
+### Settings Reference
 
 | Key | Default | Description |
 |---|---|---|
 | `provider.default` | `api` | Active LLM provider. |
 | `provider.fallback_chain` | `["api", "cli", "local"]` | Ordered fallback list. |
-| `provider.cli.backend` | `claude-code` | Backend used by the `cli` provider. |
-| `provider.api.model` | `claude-sonnet-4-6` | Model used by the `api` provider. |
-| `provider.local.model` | `qwen3:32b` | Model used by the `local` provider. |
+| `provider.cli.backend` | `claude-code` | Backend for the `cli` provider. |
+| `provider.api.model` | `claude-sonnet-4-6` | Model for the `api` provider. |
+| `provider.local.model` | `qwen3:32b` | Model for the `local` provider. |
 | `provider.local.endpoint` | `http://localhost:11434` | Ollama endpoint. |
 | `render.default_quality` | `medium` | Quality for `explore`. |
 | `render.deep_quality` | `production` | Quality for `deep`. |
 | `render.default_format` | `video` | Output format when none is specified. |
-| `verification.always_attempt` | `true` | Attempt verification even without Lean. |
-| `verification.allow_unverified_viz` | `true` | Render even if unverified. |
 | `verification.explore_timeout` | `60` | Lean timeout in seconds for `explore`. |
 | `verification.deep_timeout` | `300` | Lean timeout in seconds for `deep`. |
 | `workspace.path` | `~/.local/share/mathlens/explorations` | Exploration storage. |
-| `ui.theme` | `auto` | Terminal color theme. |
-| `ui.open_video_on_complete` | `true` | Open video after render. |
 
 ### Profiles
 
-Profiles apply a preset group of settings in one command.
-
 | Profile | What it sets | Use case |
 |---|---|---|
-| `personal` | `provider.default = cli`, fallback chain starts with `cli` | Local development with Claude Code CLI subscription — no API key needed. |
-| `publish` | `provider.default = api`, fallback chain starts with `api` | Reproducible output for sharing or publication. |
-
-```bash
-mathlens config profile personal
-mathlens config profile publish
-```
+| `personal` | `provider.default = cli`, fallback starts with `cli` | Use Claude Code subscription -- no API key needed. |
+| `publish` | `provider.default = api`, fallback starts with `api` | Stable API access for sharing or publication. |
 
 ---
 
-## LLM providers
+## LLM Providers
 
-| Provider key | Requires | Notes |
-|---|---|---|
-| `cli` | Claude Code CLI installed and authenticated | Uses a Claude Code CLI subprocess. Free under a subscription, no separate API key. |
-| `api` | `ANTHROPIC_API_KEY` environment variable | Direct Anthropic API access. Default model: `claude-sonnet-4-6`. |
-| `local` | Ollama running locally | Talks to Ollama at the configured endpoint. Default model: `qwen3:32b`. |
-
-Set `ANTHROPIC_API_KEY` in your shell profile when using the `api` provider:
-
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-```
+| Provider | Cost | Quality | Setup |
+|---|---|---|---|
+| `cli` | Subscription | High | Claude Code CLI installed (`npm i -g @anthropic-ai/claude-code`) |
+| `api` | Per-token | High | `ANTHROPIC_API_KEY` environment variable |
+| `local` | Free | Medium | Ollama running locally with a model pulled |
 
 ---
 
@@ -159,31 +160,37 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ### Required
 
-| Dependency | Version | Purpose |
+| Dependency | Version | Install |
 |---|---|---|
-| Python | 3.11+ | Runtime. |
-| Manim CE | 0.18+ | Animation rendering. |
-| ffmpeg | any | Video encoding used by Manim. |
+| Python | 3.11+ | System package manager or pyenv |
+| Manim CE | 0.18+ | `pip install manim` |
+| ffmpeg | any | macOS: `brew install ffmpeg` / Linux: `apt install ffmpeg` / Windows: `winget install ffmpeg` |
 
-### For formal verification (optional but recommended)
+### For Formal Verification (optional, recommended)
 
-| Dependency | Notes |
+| Dependency | Install |
 |---|---|
-| Lean 4 | Install via `elan`: `curl https://elan.lean-lang.org/elan-init.sh -sSf \| sh` |
-| Mathlib | Fetched automatically by the Lean project inside the workspace. |
+| Lean 4 (via elan) | macOS/Linux: `curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \| sh` / Windows: `winget install leanprover.elan` |
+| Mathlib | Fetched automatically by the Lean project. |
 
-Without Lean, verification is skipped and all outputs receive the `○ Not checked`
-badge.
+Without Lean, verification is skipped and all outputs receive the `○ Not checked` badge.
 
-### For LLM access (at least one required)
+### For Math Typesetting (optional)
 
-| Option | Notes |
+| Dependency | Install |
+|---|---|
+| LaTeX | macOS: `brew install --cask basictex` / Linux: `apt install texlive-base` / Windows: `winget install MiKTeX.MiKTeX` |
+
+### For LLM Access (at least one required)
+
+| Provider | Install |
 |---|---|
 | Claude Code CLI | `npm install -g @anthropic-ai/claude-code` |
-| Anthropic API key | Set `ANTHROPIC_API_KEY`. |
-| Ollama | `brew install ollama` or https://ollama.com |
+| Anthropic API | Set `ANTHROPIC_API_KEY` in your shell profile |
+| Ollama | macOS: `brew install ollama` / Linux: `curl -fsSL https://ollama.com/install.sh \| sh` / Windows: `winget install Ollama.Ollama` |
 
-Run `mathlens doctor` at any time to see the status of all dependencies.
+Run `mathlens doctor` at any time to check the status of all dependencies.
+Run `mathlens doctor --install` to attempt automatic installation of anything missing.
 
 ---
 

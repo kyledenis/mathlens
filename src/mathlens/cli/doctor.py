@@ -1,7 +1,10 @@
-"""mathlens doctor — dependency health checks."""
+"""mathlens doctor — dependency health checks with cross-platform install support."""
+
 from __future__ import annotations
 
+import platform
 import shutil
+import subprocess
 import sys
 from typing import NamedTuple
 
@@ -19,6 +22,20 @@ class _Check(NamedTuple):
     details: str
 
 
+def _platform() -> str:
+    """Return 'macos', 'linux', or 'windows'."""
+    s = platform.system().lower()
+    if s == "darwin":
+        return "macos"
+    if s == "windows":
+        return "windows"
+    return "linux"
+
+
+# ---------------------------------------------------------------------------
+# Dependency checks
+# ---------------------------------------------------------------------------
+
 def _check_python() -> _Check:
     vi = sys.version_info
     ok = (vi.major, vi.minor) >= (3, 11)
@@ -28,13 +45,12 @@ def _check_python() -> _Check:
 
 def _check_lean() -> _Check:
     path = shutil.which("lean")
-    ok = path is not None
-    return _Check("Lean 4", ok, path or "not found")
+    return _Check("Lean 4", path is not None, path or "not found")
 
 
 def _check_manim() -> _Check:
     try:
-        import manim  # type: ignore
+        import manim  # type: ignore[import-untyped]
         version = getattr(manim, "__version__", "unknown")
         return _Check("Manim CE", True, version)
     except ImportError:
@@ -43,8 +59,7 @@ def _check_manim() -> _Check:
 
 def _check_ffmpeg() -> _Check:
     path = shutil.which("ffmpeg")
-    ok = path is not None
-    return _Check("ffmpeg", ok, path or "not found")
+    return _Check("ffmpeg", path is not None, path or "not found")
 
 
 def _check_latex() -> _Check:
@@ -57,29 +72,63 @@ def _check_latex() -> _Check:
 
 def _check_claude() -> _Check:
     path = shutil.which("claude")
-    ok = path is not None
-    return _Check("claude (CLI)", ok, path or "not found")
+    return _Check("claude (CLI)", path is not None, path or "not found")
 
 
 def _check_ollama() -> _Check:
     path = shutil.which("ollama")
-    ok = path is not None
-    return _Check("ollama", ok, path or "not found")
+    return _Check("ollama", path is not None, path or "not found")
 
 
-INSTALL_HINTS: dict[str, str] = {
-    "Lean 4": "curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh",
-    "ffmpeg": "brew install ffmpeg",
-    "LaTeX": "brew install --cask basictex",
-    "claude (CLI)": "npm install -g @anthropic-ai/claude-code",
-    "ollama": "brew install ollama",
-    "Manim CE": "pip install manim",
+# ---------------------------------------------------------------------------
+# Cross-platform install hints
+# ---------------------------------------------------------------------------
+
+_INSTALL_HINTS: dict[str, dict[str, str]] = {
+    "Lean 4": {
+        "macos": "curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh",
+        "linux": "curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh",
+        "windows": "winget install leanprover.elan",
+    },
+    "ffmpeg": {
+        "macos": "brew install ffmpeg",
+        "linux": "sudo apt install ffmpeg",
+        "windows": "winget install ffmpeg",
+    },
+    "LaTeX": {
+        "macos": "brew install --cask basictex",
+        "linux": "sudo apt install texlive-base",
+        "windows": "winget install MiKTeX.MiKTeX",
+    },
+    "claude (CLI)": {
+        "macos": "npm install -g @anthropic-ai/claude-code",
+        "linux": "npm install -g @anthropic-ai/claude-code",
+        "windows": "npm install -g @anthropic-ai/claude-code",
+    },
+    "ollama": {
+        "macos": "brew install ollama",
+        "linux": "curl -fsSL https://ollama.com/install.sh | sh",
+        "windows": "winget install Ollama.Ollama",
+    },
+    "Manim CE": {
+        "macos": "pip install manim",
+        "linux": "pip install manim",
+        "windows": "pip install manim",
+    },
 }
 
 
 def _install_hint(component: str) -> str | None:
-    return INSTALL_HINTS.get(component)
+    """Return the install command for this platform, or None."""
+    hints = _INSTALL_HINTS.get(component)
+    if hints is None:
+        return None
+    return hints.get(_platform())
 
+
+# ---------------------------------------------------------------------------
+# Doctor command
+# ---------------------------------------------------------------------------
 
 @app.command()
 def doctor(
@@ -87,6 +136,7 @@ def doctor(
     install: bool = typer.Option(False, "--install", help="Attempt to install missing dependencies."),
 ) -> None:
     """Check dependencies and workspace health."""
+    plat = _platform()
     checks = [
         _check_python(),
         _check_lean(),
@@ -97,7 +147,12 @@ def doctor(
         _check_ollama(),
     ]
 
-    table = Table(title="MathLens Dependency Health", show_header=True, header_style="bold", box=box.ROUNDED)
+    table = Table(
+        title=f"MathLens Dependency Health ({plat})",
+        show_header=True,
+        header_style="bold",
+        box=box.ROUNDED,
+    )
     table.add_column("Component", style="bold")
     table.add_column("Status", justify="center")
     table.add_column("Details")
@@ -115,36 +170,40 @@ def doctor(
         console.print()
         console.print("  [green]All checks passed.[/green] Ready to go.")
         console.print()
-        console.print("  [dim]Try:[/dim] mathlens explore \"why does e^(i*pi) = -1\"")
+        console.print('  [dim]Try:[/dim] mathlens explore "why does e^(i*pi) = -1"')
     else:
         console.print()
         console.print("  [bold]Next steps:[/bold]")
         for c in failed:
             hint = _install_hint(c.component)
             if hint:
-                console.print(f"    {c.component}: {hint}")
+                console.print(f"    {c.component}: [dim]{hint}[/dim]")
+            else:
+                console.print(f"    {c.component}: [dim]no installer available for {plat}[/dim]")
         console.print()
         console.print("  [dim]MathLens works without optional deps — missing tools only affect specific features.[/dim]")
         if not install:
             console.print("  [dim]Run [bold]mathlens doctor --install[/bold] to attempt automatic installation.[/dim]")
 
+    # --install: attempt to install missing deps
     if install and failed:
-        import subprocess
-
         console.print()
         console.print("[bold]Installing missing dependencies...[/bold]")
         for c in failed:
             hint = _install_hint(c.component)
             if not hint:
-                console.print(f"  [yellow]-[/yellow] {c.component}: no automatic installer available")
+                console.print(f"  [yellow]-[/yellow] {c.component}: no automatic installer for {plat}")
                 continue
             console.print(f"  [dim]>[/dim] Installing {c.component}...")
             try:
-                result = subprocess.run(hint, shell=True, capture_output=True, text=True, timeout=300)
+                result = subprocess.run(
+                    hint, shell=True, capture_output=True, text=True, timeout=300,
+                )
                 if result.returncode == 0:
                     console.print(f"  [green]>[/green] {c.component} installed")
                 else:
-                    console.print(f"  [red]>[/red] {c.component} failed: {result.stderr.strip()[:200]}")
+                    stderr_excerpt = result.stderr.strip()[:200]
+                    console.print(f"  [red]>[/red] {c.component} failed: {stderr_excerpt}")
                     console.print(f"      [dim]Manual install:[/dim] {hint}")
             except subprocess.TimeoutExpired:
                 console.print(f"  [red]>[/red] {c.component} timed out")
@@ -153,10 +212,12 @@ def doctor(
                 console.print(f"  [red]>[/red] {c.component} error: {e}")
                 console.print(f"      [dim]Manual install:[/dim] {hint}")
 
+    # --fix: repair workspace
     if fix:
         from pathlib import Path as _Path
-        from mathlens.workspace.repair import WorkspaceRepair
+
         from mathlens.config.settings import MathLensSettings
+        from mathlens.workspace.repair import WorkspaceRepair
 
         config_path = _Path.home() / ".config" / "mathlens" / "config.toml"
         settings = MathLensSettings.from_toml(config_path)
@@ -166,7 +227,7 @@ def doctor(
             console.print()
             console.print("[bold]Repairs:[/bold]")
             for action in actions:
-                console.print(f"  [green]✓[/green] {action}")
+                console.print(f"  [green]>[/green] {action}")
         else:
             console.print()
             console.print("  [dim]No workspace issues to fix[/dim]")
