@@ -21,7 +21,7 @@ def test_config_show_contains_provider(tmp_path: Path) -> None:
     cfg = tmp_path / "config.toml"
     result = runner.invoke(app, ["config", "show", "--config-path", str(cfg)])
     assert result.exit_code == 0, result.output
-    assert "provider" in result.output
+    assert "Provider" in result.output
 
 
 # ---------------------------------------------------------------------------

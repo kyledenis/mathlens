@@ -50,17 +50,40 @@ def config_show(
     """Display current configuration as a table."""
     settings = _load(config_path)
 
-    table, panel = make_table("Configuration", [("Key", "bold"), ("Value", None)])
+    sections: list[tuple[str, list[tuple[str, str]]]] = [
+        ("Provider", [
+            ("default", settings.provider.default),
+            ("fallback_chain", ", ".join(settings.provider.fallback_chain)),
+            ("cli.backend", settings.provider.cli.backend),
+            ("api.model", settings.provider.api.model),
+            ("local.model", settings.provider.local.model),
+            ("local.endpoint", settings.provider.local.endpoint),
+        ]),
+        ("Render", [
+            ("default_quality", settings.render.default_quality),
+            ("default_format", settings.render.default_format),
+            ("deep_quality", settings.render.deep_quality),
+        ]),
+        ("Verification", [
+            ("always_attempt", str(settings.verification.always_attempt)),
+            ("explore_timeout", f"{settings.verification.explore_timeout}s"),
+            ("deep_timeout", f"{settings.verification.deep_timeout}s"),
+        ]),
+        ("Workspace", [
+            ("path", settings.workspace.path),
+        ]),
+    ]
 
-    table.add_row("provider.default", str(settings.provider.default))
-    table.add_row("provider.fallback_chain", str(settings.provider.fallback_chain))
-    table.add_row("provider.cli.backend", str(settings.provider.cli.backend))
-    table.add_row("provider.api.model", str(settings.provider.api.model))
-    table.add_row("provider.local.model", str(settings.provider.local.model))
-    table.add_row("render.default_quality", str(settings.render.default_quality))
-    table.add_row("render.default_format", str(settings.render.default_format))
-    table.add_row("verification.always_attempt", str(settings.verification.always_attempt))
-    table.add_row("workspace.path", str(settings.workspace.path))
+    table, panel = make_table("Configuration", [("Setting", "cyan"), ("Value", None)])
+
+    first_section = True
+    for section_name, rows in sections:
+        if not first_section:
+            table.add_row("", "")  # blank separator
+        table.add_row(f"[bold]{section_name}[/bold]", "")
+        for key, value in rows:
+            table.add_row(f"  [dim]{key}[/dim]", f"{value}")
+        first_section = False
 
     console.print(panel)
 
@@ -103,10 +126,10 @@ def config_diff(
         console.print("No changes from defaults.")
         return
 
-    table, panel = make_table("Configuration Diff", [("Key", "bold"), ("Default", None), ("Current", "green")])
+    table, panel = make_table("Changes from Defaults", [("Setting", "cyan"), ("Default", "dim"), ("Current", None)])
 
     for dot_path, info in changes.items():
-        table.add_row(dot_path, str(info["default"]), str(info["current"]))
+        table.add_row(f"  {dot_path}", str(info["default"]), f"[green]{info['current']}[/green]")
 
     console.print(panel)
 

@@ -175,24 +175,26 @@ def doctor(
 ) -> None:
     """Check dependencies and workspace health."""
     plat = _platform()
-    checks = [
-        _check_python(),
-        _check_lean(),
-        _check_manim(),
-        _check_ffmpeg(),
-        _check_latex(),
-        _check_claude(),
-        _check_ollama(),
-    ]
+    required = [_check_python(), _check_manim(), _check_ffmpeg()]
+    optional = [_check_lean(), _check_latex(), _check_claude(), _check_ollama()]
+
+    checks = required + optional
 
     table, panel = make_table(
         f"Dependencies ({plat})",
         [("Component", "bold"), ("Status", None), ("Details", "dim")],
     )
 
-    for check in checks:
+    table.add_row("[bold]Required[/bold]", "", "")
+    for check in required:
         status = "[green]\u2713[/green]" if check.ok else "[red]\u2717[/red]"
-        table.add_row(check.component, status, check.details)
+        table.add_row(f"  {check.component}", status, check.details)
+
+    table.add_row("", "", "")
+    table.add_row("[bold]Optional[/bold]", "", "")
+    for check in optional:
+        status = "[green]\u2713[/green]" if check.ok else "[yellow]\u2717[/yellow]"
+        table.add_row(f"  {check.component}", status, check.details)
 
     console.print(panel)
 
