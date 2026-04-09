@@ -7,6 +7,7 @@ from typing import Optional
 
 import httpx
 
+from mathlens.lifecycle import register_client
 from mathlens.providers.base import LLMResponse, ProviderCapabilities, Tier
 
 _API_URL = "https://api.anthropic.com/v1/messages"
@@ -23,7 +24,8 @@ class AnthropicAPIProvider:
     ) -> None:
         self._api_key = api_key
         self._model = model
-        self._client = httpx.AsyncClient(timeout=120.0)
+        self._client = httpx.AsyncClient(timeout=300.0)
+        register_client(self._client)
 
     @classmethod
     def from_env(cls, model: str = "claude-sonnet-4-6") -> Optional[AnthropicAPIProvider]:

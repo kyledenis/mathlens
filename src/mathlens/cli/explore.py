@@ -11,6 +11,7 @@ import typer
 from mathlens.cli.app import app
 from mathlens.cli.common import apply_flag_overrides, build_pipeline
 from mathlens.config.settings import MathLensSettings
+from mathlens.lifecycle import cleanup, install_signal_handlers
 from mathlens.models import Badge, OutputFormat, PipelineMode, PipelineStage
 from mathlens.pipeline.orchestrator import ExplorationResult
 from mathlens.ui.console import console, format_badge, format_duration, format_topic_header
@@ -131,6 +132,7 @@ def explore(
     json_output: bool = typer.Option(False, "--json", help="Output result as JSON."),
 ) -> None:
     """Explore a math topic: plan → verify → visualize → summarize."""
+    install_signal_handlers()
     try:
         settings = MathLensSettings.from_toml(_CONFIG_PATH)
         apply_flag_overrides(
@@ -147,6 +149,11 @@ def explore(
         )
         result = run_explore(query, settings, format_override=format, no_verify=no_verify, quiet=quiet)
         display_result(result)
+    except KeyboardInterrupt:
+        cleanup()
+        console.print("\n  [dim]Interrupted. All background processes stopped.[/dim]")
+        raise typer.Exit(code=130)
     except Exception as exc:
+        cleanup()
         console.print(format_error(str(exc)))
         raise typer.Exit(code=1)

@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import shutil
 from typing import Optional
 
+from mathlens.lifecycle import register_process, unregister_process
 from mathlens.providers.base import (
     LLMResponse,
     ProviderCapabilities,
     Tier,
 )
+
+logger = logging.getLogger(__name__)
 
 BACKEND_COMMANDS: dict[str, list[str]] = {
     "claude-code": ["claude", "-p"],
@@ -40,7 +44,7 @@ BACKEND_CAPABILITIES: dict[str, ProviderCapabilities] = {
 class CLISubprocessProvider:
     """LLM provider that delegates to a local CLI tool via subprocess."""
 
-    def __init__(self, backend: str = "claude-code", timeout: int = 120) -> None:
+    def __init__(self, backend: str = "claude-code", timeout: int = 600) -> None:
         if backend not in BACKEND_COMMANDS:
             raise ValueError(
                 f"Unknown backend {backend!r}. "
@@ -79,6 +83,7 @@ class CLISubprocessProvider:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        register_process(process)
 
         try:
             stdout, stderr = await asyncio.wait_for(
@@ -86,9 +91,19 @@ class CLISubprocessProvider:
             )
         except asyncio.TimeoutError:
             process.kill()
+            await process.wait()
+            unregister_process(process)
             raise TimeoutError(
                 f"CLI backend {self._backend!r} timed out after {self._timeout}s"
             )
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            # Ctrl+C or task cancellation — kill the subprocess
+            process.kill()
+            await process.wait()
+            unregister_process(process)
+            raise
+        else:
+            unregister_process(process)
 
         if process.returncode != 0:
             error_text = stderr.decode() if stderr else ""

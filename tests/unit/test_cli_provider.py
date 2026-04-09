@@ -94,6 +94,9 @@ class TestCLISubprocessProviderComplete:
         mock_process = MagicMock()
         mock_process.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
         mock_process.kill = MagicMock()
+        mock_process.wait = AsyncMock()
+        mock_process.returncode = None
+        mock_process.pid = 12345
 
         with patch(
             "asyncio.create_subprocess_exec", new=AsyncMock(return_value=mock_process)

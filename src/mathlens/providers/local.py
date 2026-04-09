@@ -37,7 +37,8 @@ class OllamaProvider:
     ) -> None:
         self._model = model
         self._endpoint = endpoint.rstrip("/")
-        self._client = httpx.AsyncClient(timeout=300)
+        # Local models can be slow — 10 min default handles large models on modest hardware
+        self._client = httpx.AsyncClient(timeout=600)
         tiers = _estimate_tiers(model)
         self._formalization_tier = tiers[0]
         self._scene_tier = tiers[1]

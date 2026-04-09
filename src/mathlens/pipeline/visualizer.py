@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from mathlens.lifecycle import register_process, unregister_process
 from mathlens.models import (
     Badge,
     OutputFormat,
@@ -51,8 +52,8 @@ MANIM_QUALITY_FLAGS: dict[RenderQuality, str] = {
 }
 
 RENDER_TIMEOUTS: dict[PipelineMode, int] = {
-    PipelineMode.explore: 30,
-    PipelineMode.deep: 120,
+    PipelineMode.explore: 120,
+    PipelineMode.deep: 600,
 }
 
 
@@ -183,14 +184,23 @@ class Visualizer:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        register_process(proc)
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 proc.communicate(), timeout=timeout
             )
         except asyncio.TimeoutError:
             proc.kill()
-            await proc.communicate()
+            await proc.wait()
+            unregister_process(proc)
             return 1, "", f"Manim render timed out after {timeout}s"
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            proc.kill()
+            await proc.wait()
+            unregister_process(proc)
+            raise
+        else:
+            unregister_process(proc)
 
         return (
             proc.returncode or 0,

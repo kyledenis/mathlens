@@ -34,8 +34,8 @@ def make_verifier(tmp_path: Path, provider=None) -> Verifier:
     return Verifier(
         provider=provider,
         workspace_dir=tmp_path,
-        explore_timeout=60,
-        deep_timeout=300,
+        explore_timeout=120,
+        deep_timeout=600,
     )
 
 
@@ -104,8 +104,8 @@ async def test_verify_saves_proof_file(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_explore_vs_deep_timeout(tmp_path: Path) -> None:
     verifier = make_verifier(tmp_path)
-    assert verifier._timeout_for(PipelineMode.explore) == 60
-    assert verifier._timeout_for(PipelineMode.deep) == 300
+    assert verifier._timeout_for(PipelineMode.explore) == 120
+    assert verifier._timeout_for(PipelineMode.deep) == 600
 
 
 @pytest.mark.asyncio

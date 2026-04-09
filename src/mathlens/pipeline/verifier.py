@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from mathlens.lifecycle import register_process, unregister_process
 from mathlens.models import PipelineMode, VerificationResult, VerificationStatus
 from mathlens.providers.base import LLMProvider
 
@@ -154,6 +155,7 @@ class Verifier:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        register_process(proc)
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 proc.communicate(),
@@ -161,8 +163,16 @@ class Verifier:
             )
         except asyncio.TimeoutError as exc:
             proc.kill()
-            await proc.communicate()
+            await proc.wait()
+            unregister_process(proc)
             raise TimeoutError from exc
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            proc.kill()
+            await proc.wait()
+            unregister_process(proc)
+            raise
+        else:
+            unregister_process(proc)
 
         return (
             proc.returncode if proc.returncode is not None else 1,
