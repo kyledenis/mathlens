@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+from rich import box
 from rich.table import Table
 
 from mathlens.cli.app import app
@@ -37,7 +38,7 @@ def history(
         console.print("[dim]No explorations yet.[/dim]")
         return
 
-    table = Table(show_header=True, header_style="bold")
+    table = Table(show_header=True, header_style="bold", box=box.ROUNDED)
     table.add_column("Topic")
     table.add_column("Mode")
     table.add_column("Status")
@@ -76,7 +77,7 @@ def search(
         console.print("[dim]No results.[/dim]")
         return
 
-    table = Table(show_header=True, header_style="bold")
+    table = Table(show_header=True, header_style="bold", box=box.ROUNDED)
     table.add_column("Topic")
     table.add_column("Match")
 

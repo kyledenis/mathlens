@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+from rich import box
 from rich.table import Table
 
 from mathlens.cli.app import app
@@ -52,7 +53,7 @@ def config_show(
     """Display current configuration as a table."""
     settings = _load(config_path)
 
-    table = Table(title="MathLens Configuration", show_header=True, header_style="bold cyan")
+    table = Table(title="MathLens Configuration", show_header=True, header_style="bold cyan", box=box.ROUNDED)
     table.add_column("Key", style="bold")
     table.add_column("Value")
 
@@ -112,7 +113,7 @@ def config_diff(
         console.print("No changes from defaults.")
         return
 
-    table = Table(title="Configuration Diff", show_header=True, header_style="bold yellow")
+    table = Table(title="Configuration Diff", show_header=True, header_style="bold yellow", box=box.ROUNDED)
     table.add_column("Key", style="bold")
     table.add_column("Default")
     table.add_column("Current", style="green")

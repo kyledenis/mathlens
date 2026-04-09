@@ -6,6 +6,7 @@ import sys
 from typing import NamedTuple
 
 import typer
+from rich import box
 from rich.table import Table
 
 from mathlens.cli.app import app
@@ -66,11 +67,26 @@ def _check_ollama() -> _Check:
     return _Check("ollama", ok, path or "not found")
 
 
+INSTALL_HINTS: dict[str, str] = {
+    "Lean 4": "curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh",
+    "ffmpeg": "brew install ffmpeg",
+    "LaTeX": "brew install --cask basictex",
+    "claude (CLI)": "npm install -g @anthropic-ai/claude-code",
+    "ollama": "brew install ollama",
+    "Manim CE": "pip install manim",
+}
+
+
+def _install_hint(component: str) -> str | None:
+    return INSTALL_HINTS.get(component)
+
+
 @app.command()
 def doctor(
-    fix: bool = typer.Option(False, "--fix", help="Attempt to fix missing dependencies (not yet implemented)."),
+    fix: bool = typer.Option(False, "--fix", help="Repair workspace issues (stale locks, tmp files)."),
+    install: bool = typer.Option(False, "--install", help="Attempt to install missing dependencies."),
 ) -> None:
-    """Check that required and optional dependencies are available."""
+    """Check dependencies and workspace health."""
     checks = [
         _check_python(),
         _check_lean(),
@@ -81,7 +97,7 @@ def doctor(
         _check_ollama(),
     ]
 
-    table = Table(title="MathLens Dependency Health", show_header=True, header_style="bold")
+    table = Table(title="MathLens Dependency Health", show_header=True, header_style="bold", box=box.ROUNDED)
     table.add_column("Component", style="bold")
     table.add_column("Status", justify="center")
     table.add_column("Details")
@@ -93,13 +109,49 @@ def doctor(
     console.print(table)
 
     all_ok = all(c.ok for c in checks)
+    failed = [c for c in checks if not c.ok]
+
     if all_ok:
-        console.print("[green]All checks passed.[/green]")
+        console.print()
+        console.print("  [green]All checks passed.[/green] Ready to go.")
+        console.print()
+        console.print("  [dim]Try:[/dim] mathlens explore \"why does e^(i*pi) = -1\"")
     else:
-        console.print("[yellow]Some dependencies are missing.[/yellow]")
-        console.print(
-            "MathLens degrades gracefully — missing optional tools only affect specific features."
-        )
+        console.print()
+        console.print("  [bold]Next steps:[/bold]")
+        for c in failed:
+            hint = _install_hint(c.component)
+            if hint:
+                console.print(f"    {c.component}: {hint}")
+        console.print()
+        console.print("  [dim]MathLens works without optional deps — missing tools only affect specific features.[/dim]")
+        if not install:
+            console.print("  [dim]Run [bold]mathlens doctor --install[/bold] to attempt automatic installation.[/dim]")
+
+    if install and failed:
+        import subprocess
+
+        console.print()
+        console.print("[bold]Installing missing dependencies...[/bold]")
+        for c in failed:
+            hint = _install_hint(c.component)
+            if not hint:
+                console.print(f"  [yellow]-[/yellow] {c.component}: no automatic installer available")
+                continue
+            console.print(f"  [dim]>[/dim] Installing {c.component}...")
+            try:
+                result = subprocess.run(hint, shell=True, capture_output=True, text=True, timeout=300)
+                if result.returncode == 0:
+                    console.print(f"  [green]>[/green] {c.component} installed")
+                else:
+                    console.print(f"  [red]>[/red] {c.component} failed: {result.stderr.strip()[:200]}")
+                    console.print(f"      [dim]Manual install:[/dim] {hint}")
+            except subprocess.TimeoutExpired:
+                console.print(f"  [red]>[/red] {c.component} timed out")
+                console.print(f"      [dim]Manual install:[/dim] {hint}")
+            except Exception as e:
+                console.print(f"  [red]>[/red] {c.component} error: {e}")
+                console.print(f"      [dim]Manual install:[/dim] {hint}")
 
     if fix:
         from pathlib import Path as _Path

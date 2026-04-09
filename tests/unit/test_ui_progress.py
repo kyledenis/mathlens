@@ -4,8 +4,9 @@ import pytest
 
 from mathlens.models import PipelineStage
 from mathlens.ui.progress import (
-    STAGE_ICONS,
+    STAGE_DONE_MARKERS,
     STAGE_LABELS,
+    STAGE_MARKERS,
     PipelineProgress,
 )
 
@@ -15,9 +16,13 @@ class TestStageMappings:
         for stage in PipelineStage:
             assert stage in STAGE_LABELS
 
-    def test_all_stages_have_icons(self):
+    def test_all_stages_have_markers(self):
         for stage in PipelineStage:
-            assert stage in STAGE_ICONS
+            assert stage in STAGE_MARKERS
+
+    def test_all_stages_have_done_markers(self):
+        for stage in PipelineStage:
+            assert stage in STAGE_DONE_MARKERS
 
     def test_planning_label(self):
         assert STAGE_LABELS[PipelineStage.planning] == "Planning"
@@ -31,17 +36,9 @@ class TestStageMappings:
     def test_summarization_label(self):
         assert STAGE_LABELS[PipelineStage.summarization] == "Summarizing"
 
-    def test_planning_icon(self):
-        assert STAGE_ICONS[PipelineStage.planning] == "📋"
-
-    def test_verification_icon(self):
-        assert STAGE_ICONS[PipelineStage.verification] == "🔍"
-
-    def test_visualization_icon(self):
-        assert STAGE_ICONS[PipelineStage.visualization] == "🎬"
-
-    def test_summarization_icon(self):
-        assert STAGE_ICONS[PipelineStage.summarization] == "📝"
+    def test_markers_are_not_emoji(self):
+        for marker in STAGE_MARKERS.values():
+            assert ">" in marker  # text-based marker
 
 
 class TestPipelineProgress:
@@ -54,19 +51,9 @@ class TestPipelineProgress:
     def test_label_for_verification(self):
         assert self.progress.label_for(PipelineStage.verification) == "Verifying"
 
-    def test_icon_for_planning(self):
-        assert self.progress.icon_for(PipelineStage.planning) == "📋"
-
-    def test_icon_for_visualization(self):
-        assert self.progress.icon_for(PipelineStage.visualization) == "🎬"
-
     def test_format_stage_start_contains_label(self):
         result = self.progress.format_stage_start(PipelineStage.planning)
         assert "Planning" in result
-
-    def test_format_stage_start_contains_icon(self):
-        result = self.progress.format_stage_start(PipelineStage.planning)
-        assert "📋" in result
 
     def test_format_stage_start_ends_with_ellipsis(self):
         result = self.progress.format_stage_start(PipelineStage.verification)
@@ -83,7 +70,3 @@ class TestPipelineProgress:
     def test_format_stage_done_contains_duration_minutes(self):
         result = self.progress.format_stage_done(PipelineStage.visualization, 90.0)
         assert "1m" in result
-
-    def test_format_stage_done_contains_checkmark(self):
-        result = self.progress.format_stage_done(PipelineStage.summarization, 2.0)
-        assert "✓" in result
