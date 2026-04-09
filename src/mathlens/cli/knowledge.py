@@ -6,13 +6,10 @@ from pathlib import Path
 from typing import Optional
 
 import typer
-from rich import box
-from rich.table import Table
-
 from mathlens.cli.app import app
 from mathlens.config.settings import MathLensSettings
 from mathlens.models import Badge, StageStatus
-from mathlens.ui.console import console
+from mathlens.ui.console import console, make_table
 from mathlens.workspace.search import SearchIndex
 from mathlens.workspace.store import WorkspaceStore
 
@@ -38,21 +35,18 @@ def history(
         console.print("[dim]No explorations yet.[/dim]")
         return
 
-    table = Table(show_header=True, header_style="bold", box=box.ROUNDED, border_style="dim")
-    table.add_column("Topic")
-    table.add_column("Mode")
-    table.add_column("Status")
-    table.add_column("Slug")
+    table, panel = make_table("Explorations", [("Topic", None), ("Mode", None), ("Status", None), ("Slug", "dim")])
 
     for meta in explorations:
+        status_style = "green" if meta.status == StageStatus.completed else "yellow"
         table.add_row(
             meta.topic,
             meta.mode.value,
-            meta.status.value,
+            f"[{status_style}]{meta.status.value}[/{status_style}]",
             meta.slug,
         )
 
-    console.print(table)
+    console.print(panel)
 
 
 @app.command()
@@ -77,14 +71,12 @@ def search(
         console.print("[dim]No results.[/dim]")
         return
 
-    table = Table(show_header=True, header_style="bold", box=box.ROUNDED, border_style="dim")
-    table.add_column("Topic")
-    table.add_column("Match")
+    table, panel = make_table(f"Search: {query}", [("Topic", None), ("Match", "dim")])
 
     for result in results:
         table.add_row(result.topic, result.snippet)
 
-    console.print(table)
+    console.print(panel)
 
 
 @app.command()

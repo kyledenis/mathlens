@@ -24,7 +24,7 @@ class AnthropicAPIProvider:
     ) -> None:
         self._api_key = api_key
         self._model = model
-        self._client = httpx.AsyncClient(timeout=300.0)
+        self._client = httpx.AsyncClient(timeout=600.0)  # 10 min — only catches hangs
         register_client(self._client)
 
     @classmethod

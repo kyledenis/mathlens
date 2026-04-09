@@ -21,7 +21,7 @@ else:
 
 class CLIProviderSettings(BaseModel):
     backend: str = "claude-code"
-    timeout: int = 600  # 10 min — formalization calls to claude can take 3-5 min
+    timeout: int = 1800  # 30 min — only catches runaway processes, never normal use
 
 
 class APIProviderSettings(BaseModel):
@@ -51,8 +51,8 @@ class RenderSettings(BaseModel):
 class VerificationSettings(BaseModel):
     always_attempt: bool = True
     allow_unverified_viz: bool = True
-    explore_timeout: int = 120
-    deep_timeout: int = 600
+    explore_timeout: int = 600   # 10 min — catches runaway Lean proofs
+    deep_timeout: int = 1800    # 30 min — complex proofs can take a long time
 
 
 class WorkspaceSettings(BaseModel):

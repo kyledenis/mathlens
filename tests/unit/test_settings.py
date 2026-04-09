@@ -35,13 +35,13 @@ class TestDefaults:
         s = MathLensSettings()
         assert s.verification.always_attempt is True
         assert s.verification.allow_unverified_viz is True
-        assert s.verification.explore_timeout == 120
-        assert s.verification.deep_timeout == 600
+        assert s.verification.explore_timeout == 600
+        assert s.verification.deep_timeout == 1800
 
     def test_cli_provider_defaults(self):
         s = MathLensSettings()
         assert s.provider.cli.backend == "claude-code"
-        assert s.provider.cli.timeout == 600
+        assert s.provider.cli.timeout == 1800
 
     def test_api_provider_defaults(self):
         s = MathLensSettings()
@@ -88,7 +88,7 @@ class TestLoadFromToml:
         s = MathLensSettings.from_toml(toml_file)
         assert s.provider.cli.backend == "custom-backend"
         # Other cli defaults preserved
-        assert s.provider.cli.timeout == 600
+        assert s.provider.cli.timeout == 1800
 
 
 # ---------------------------------------------------------------------------

@@ -9,13 +9,10 @@ from pathlib import Path
 from typing import Optional
 
 import typer
-from rich import box
-from rich.table import Table
-
 from mathlens.cli.app import app
 from mathlens.config.profiles import ProfileManager
 from mathlens.config.settings import MathLensSettings
-from mathlens.ui.console import console
+from mathlens.ui.console import console, make_table
 
 DEFAULT_CONFIG = Path.home() / ".config" / "mathlens" / "config.toml"
 
@@ -53,26 +50,19 @@ def config_show(
     """Display current configuration as a table."""
     settings = _load(config_path)
 
-    table = Table(title="MathLens Configuration", show_header=True, header_style="bold cyan", box=box.ROUNDED, border_style="dim")
-    table.add_column("Key", style="bold")
-    table.add_column("Value")
+    table, panel = make_table("Configuration", [("Key", "bold"), ("Value", None)])
 
-    rows = [
-        ("provider.default", str(settings.provider.default)),
-        ("provider.fallback_chain", str(settings.provider.fallback_chain)),
-        ("provider.cli.backend", str(settings.provider.cli.backend)),
-        ("provider.api.model", str(settings.provider.api.model)),
-        ("provider.local.model", str(settings.provider.local.model)),
-        ("render.default_quality", str(settings.render.default_quality)),
-        ("render.default_format", str(settings.render.default_format)),
-        ("verification.always_attempt", str(settings.verification.always_attempt)),
-        ("workspace.path", str(settings.workspace.path)),
-    ]
+    table.add_row("provider.default", str(settings.provider.default))
+    table.add_row("provider.fallback_chain", str(settings.provider.fallback_chain))
+    table.add_row("provider.cli.backend", str(settings.provider.cli.backend))
+    table.add_row("provider.api.model", str(settings.provider.api.model))
+    table.add_row("provider.local.model", str(settings.provider.local.model))
+    table.add_row("render.default_quality", str(settings.render.default_quality))
+    table.add_row("render.default_format", str(settings.render.default_format))
+    table.add_row("verification.always_attempt", str(settings.verification.always_attempt))
+    table.add_row("workspace.path", str(settings.workspace.path))
 
-    for key, value in rows:
-        table.add_row(key, value)
-
-    console.print(table)
+    console.print(panel)
 
 
 # ---------------------------------------------------------------------------
@@ -113,15 +103,12 @@ def config_diff(
         console.print("No changes from defaults.")
         return
 
-    table = Table(title="Configuration Diff", show_header=True, header_style="bold yellow", box=box.ROUNDED, border_style="dim")
-    table.add_column("Key", style="bold")
-    table.add_column("Default")
-    table.add_column("Current", style="green")
+    table, panel = make_table("Configuration Diff", [("Key", "bold"), ("Default", None), ("Current", "green")])
 
     for dot_path, info in changes.items():
         table.add_row(dot_path, str(info["default"]), str(info["current"]))
 
-    console.print(table)
+    console.print(panel)
 
 
 # ---------------------------------------------------------------------------

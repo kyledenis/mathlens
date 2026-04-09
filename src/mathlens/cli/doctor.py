@@ -10,11 +10,8 @@ import sys
 from typing import NamedTuple
 
 import typer
-from rich import box
-from rich.table import Table
-
 from mathlens.cli.app import app
-from mathlens.ui.console import console
+from mathlens.ui.console import console, make_table
 
 _SUGGESTIONS = [
     # Calculus & Analysis
@@ -188,22 +185,16 @@ def doctor(
         _check_ollama(),
     ]
 
-    table = Table(
-        title=f"MathLens Dependency Health ({plat})",
-        show_header=True,
-        header_style="bold",
-        box=box.ROUNDED,
-        border_style="dim",
+    table, panel = make_table(
+        f"Dependencies ({plat})",
+        [("Component", "bold"), ("Status", None), ("Details", "dim")],
     )
-    table.add_column("Component", style="bold")
-    table.add_column("Status", justify="center")
-    table.add_column("Details")
 
     for check in checks:
         status = "[green]\u2713[/green]" if check.ok else "[red]\u2717[/red]"
         table.add_row(check.component, status, check.details)
 
-    console.print(table)
+    console.print(panel)
 
     all_ok = all(c.ok for c in checks)
     failed = [c for c in checks if not c.ok]

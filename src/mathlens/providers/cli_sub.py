@@ -44,7 +44,7 @@ BACKEND_CAPABILITIES: dict[str, ProviderCapabilities] = {
 class CLISubprocessProvider:
     """LLM provider that delegates to a local CLI tool via subprocess."""
 
-    def __init__(self, backend: str = "claude-code", timeout: int = 600) -> None:
+    def __init__(self, backend: str = "claude-code", timeout: int = 1800) -> None:
         if backend not in BACKEND_COMMANDS:
             raise ValueError(
                 f"Unknown backend {backend!r}. "

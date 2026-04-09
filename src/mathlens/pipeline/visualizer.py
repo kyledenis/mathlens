@@ -52,8 +52,8 @@ MANIM_QUALITY_FLAGS: dict[RenderQuality, str] = {
 }
 
 RENDER_TIMEOUTS: dict[PipelineMode, int] = {
-    PipelineMode.explore: 120,
-    PipelineMode.deep: 600,
+    PipelineMode.explore: 600,   # 10 min — catches hung manim, not normal renders
+    PipelineMode.deep: 1800,     # 30 min — production 4K renders can be slow
 }
 
 
