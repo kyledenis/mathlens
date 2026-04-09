@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from mathlens.models import ExplorationPlan, Summary, VerificationResult, VerificationStatus
+from mathlens.workspace.atomic import atomic_write_text
 from mathlens.providers.base import LLMProvider
 
 
@@ -35,8 +36,10 @@ class Summarizer:
         self,
         plan: ExplorationPlan,
         verification: VerificationResult,
+        workspace_dir: Optional[Path] = None,
     ) -> Summary:
         """Build a summary from the plan and verification result."""
+        target_dir = workspace_dir or self._workspace_dir
         verification_context = self._build_verification_context(verification)
         prompt = self._build_prompt(plan, verification_context)
 
@@ -50,8 +53,8 @@ class Summarizer:
         data = self._parse_response(response.content)
 
         markdown = self._format_markdown(data, plan)
-        summary_path = self._workspace_dir / "summary.md"
-        summary_path.write_text(markdown, encoding="utf-8")
+        summary_path = target_dir / "summary.md"
+        atomic_write_text(summary_path, markdown)
 
         return Summary(
             explanation=data.get("explanation", ""),

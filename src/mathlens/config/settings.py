@@ -93,12 +93,14 @@ class MathLensSettings(BaseModel):
         return cls.model_validate(data)
 
     def save_toml(self, path: Path | str) -> None:
-        """Save settings to a TOML file, creating parent directories if needed."""
+        """Save settings atomically — write to .tmp then rename."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".toml.tmp")
         data = self.model_dump()
-        with path.open("wb") as f:
+        with tmp.open("wb") as f:
             tomli_w.dump(data, f)
+        tmp.rename(path)
 
     # ------------------------------------------------------------------
     # Dot-path access

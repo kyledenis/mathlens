@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from time import monotonic
 from typing import Optional
 
@@ -108,6 +109,8 @@ class Orchestrator:
         self._store.set_status(plan.slug, StageStatus.running)
         _emit(PipelineStage.planning, "done")
 
+        workspace_dir = self._store.path_for(plan.slug)
+
         # ------------------------------------------------------------------
         # Stage 2: Verification
         # ------------------------------------------------------------------
@@ -120,7 +123,7 @@ class Orchestrator:
                 duration_seconds=0.0,
             )
         else:
-            verification = await self._run_verification(plan, mode)
+            verification = await self._run_verification(plan, mode, workspace_dir)
 
         self._store.save_stage_result(plan.slug, PipelineStage.verification, verification)
         self._store.complete_stage(plan.slug, PipelineStage.verification)
@@ -154,7 +157,7 @@ class Orchestrator:
         # Stage 4: Summarization
         # ------------------------------------------------------------------
         _emit(PipelineStage.summarization, "start")
-        summary = await self._run_summarization(plan, verification)
+        summary = await self._run_summarization(plan, verification, workspace_dir)
         self._store.complete_stage(plan.slug, PipelineStage.summarization)
         _emit(PipelineStage.summarization, "done")
         self._store.set_status(plan.slug, StageStatus.completed)
@@ -187,11 +190,11 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     async def _run_verification(
-        self, plan: ExplorationPlan, mode: PipelineMode
+        self, plan: ExplorationPlan, mode: PipelineMode, workspace_dir: Path
     ) -> VerificationResult:
         """Run verifier; return UNVERIFIABLE on any exception."""
         try:
-            return await self._verifier.verify(plan.theorem_statements, mode)
+            return await self._verifier.verify(plan.theorem_statements, mode, workspace_dir=workspace_dir)
         except Exception:
             return VerificationResult(
                 status=VerificationStatus.unverifiable,
@@ -209,7 +212,7 @@ class Orchestrator:
     ) -> VisualizationResult:
         """Generate scene code and render it."""
         workspace_dir = self._store.path_for(plan.slug)
-        await self._visualizer.generate_scene_code(plan.visualization_scenes, plan.topic)
+        await self._visualizer.generate_scene_code(plan.visualization_scenes, plan.topic, workspace_dir=workspace_dir)
         scene_path = workspace_dir / "scene_01.py"
         output_path = workspace_dir / "output"
         return await self._visualizer.render(
@@ -221,11 +224,11 @@ class Orchestrator:
         )
 
     async def _run_summarization(
-        self, plan: ExplorationPlan, verification: VerificationResult
+        self, plan: ExplorationPlan, verification: VerificationResult, workspace_dir: Path
     ) -> Summary:
         """Summarize the exploration; return a fallback Summary on any exception."""
         try:
-            return await self._summarizer.summarize(plan, verification)
+            return await self._summarizer.summarize(plan, verification, workspace_dir=workspace_dir)
         except Exception:
             return Summary(
                 explanation=f"Summary unavailable for '{plan.topic}'.",

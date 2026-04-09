@@ -7,6 +7,7 @@ import random
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass, field
 from typing import NamedTuple
 
 import typer
@@ -124,41 +125,62 @@ def _check_ollama() -> _Check:
 # Cross-platform install hints
 # ---------------------------------------------------------------------------
 
-_INSTALL_HINTS: dict[str, dict[str, str]] = {
+@dataclass
+class _InstallCmd:
+    """An install command — either safe arg list or shell string (for pipes)."""
+    args: list[str]
+    shell: bool = False
+    display: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.display:
+            self.display = " ".join(self.args)
+
+
+def _cmd(args: list[str]) -> _InstallCmd:
+    return _InstallCmd(args=args)
+
+
+def _shell_cmd(cmd: str) -> _InstallCmd:
+    """For commands requiring shell features (pipes). Display string = the raw command."""
+    return _InstallCmd(args=[cmd], shell=True, display=cmd)
+
+
+_INSTALL_HINTS: dict[str, dict[str, _InstallCmd]] = {
     "Lean 4": {
-        "macos": "curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh",
-        "linux": "curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh",
-        "windows": "winget install leanprover.elan",
+        "macos": _shell_cmd("curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh"),
+        "linux": _shell_cmd("curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh"),
+        "windows": _cmd(["winget", "install", "leanprover.elan"]),
     },
     "ffmpeg": {
-        "macos": "brew install ffmpeg",
-        "linux": "sudo apt install ffmpeg",
-        "windows": "winget install ffmpeg",
+        "macos": _cmd(["brew", "install", "ffmpeg"]),
+        "linux": _cmd(["sudo", "apt", "install", "-y", "ffmpeg"]),
+        "windows": _cmd(["winget", "install", "ffmpeg"]),
     },
     "LaTeX": {
-        "macos": "brew install --cask basictex",
-        "linux": "sudo apt install texlive-base",
-        "windows": "winget install MiKTeX.MiKTeX",
+        "macos": _cmd(["brew", "install", "--cask", "basictex"]),
+        "linux": _cmd(["sudo", "apt", "install", "-y", "texlive-base"]),
+        "windows": _cmd(["winget", "install", "MiKTeX.MiKTeX"]),
     },
     "claude (CLI)": {
-        "macos": "npm install -g @anthropic-ai/claude-code",
-        "linux": "npm install -g @anthropic-ai/claude-code",
-        "windows": "npm install -g @anthropic-ai/claude-code",
+        "macos": _cmd(["npm", "install", "-g", "@anthropic-ai/claude-code"]),
+        "linux": _cmd(["npm", "install", "-g", "@anthropic-ai/claude-code"]),
+        "windows": _cmd(["npm", "install", "-g", "@anthropic-ai/claude-code"]),
     },
     "ollama": {
-        "macos": "brew install ollama",
-        "linux": "curl -fsSL https://ollama.com/install.sh | sh",
-        "windows": "winget install Ollama.Ollama",
+        "macos": _cmd(["brew", "install", "ollama"]),
+        "linux": _shell_cmd("curl -fsSL https://ollama.com/install.sh | sh"),
+        "windows": _cmd(["winget", "install", "Ollama.Ollama"]),
     },
     "Manim CE": {
-        "macos": "pip install manim",
-        "linux": "pip install manim",
-        "windows": "pip install manim",
+        "macos": _cmd(["pip", "install", "manim"]),
+        "linux": _cmd(["pip", "install", "manim"]),
+        "windows": _cmd(["pip", "install", "manim"]),
     },
 }
 
 
-def _install_hint(component: str) -> str | None:
+def _install_hint(component: str) -> _InstallCmd | None:
     """Return the install command for this platform, or None."""
     hints = _INSTALL_HINTS.get(component)
     if hints is None:
@@ -212,9 +234,9 @@ def doctor(
         console.print()
         console.print("  [bold]Next steps:[/bold]")
         for c in failed:
-            hint = _install_hint(c.component)
-            if hint:
-                console.print(f"    {c.component}: [dim]{hint}[/dim]")
+            cmd = _install_hint(c.component)
+            if cmd:
+                console.print(f"    {c.component}: [dim]{cmd.display}[/dim]")
             else:
                 console.print(f"    {c.component}: [dim]no installer available for {plat}[/dim]")
         console.print()
@@ -227,27 +249,33 @@ def doctor(
         console.print()
         console.print("[bold]Installing missing dependencies...[/bold]")
         for c in failed:
-            hint = _install_hint(c.component)
-            if not hint:
+            cmd = _install_hint(c.component)
+            if not cmd:
                 console.print(f"  [yellow]-[/yellow] {c.component}: no automatic installer for {plat}")
                 continue
             console.print(f"  [dim]>[/dim] Installing {c.component}...")
             try:
-                result = subprocess.run(
-                    hint, shell=True, capture_output=True, text=True, timeout=300,
-                )
-                if result.returncode == 0:
+                if cmd.shell:
+                    # Shell required for pipe commands (curl | sh). Args is [full_string].
+                    run_result = subprocess.run(
+                        cmd.args[0], shell=True, capture_output=True, text=True, timeout=300,
+                    )
+                else:
+                    run_result = subprocess.run(
+                        cmd.args, capture_output=True, text=True, timeout=300,
+                    )
+                if run_result.returncode == 0:
                     console.print(f"  [green]>[/green] {c.component} installed")
                 else:
-                    stderr_excerpt = result.stderr.strip()[:200]
+                    stderr_excerpt = run_result.stderr.strip()[:200]
                     console.print(f"  [red]>[/red] {c.component} failed: {stderr_excerpt}")
-                    console.print(f"      [dim]Manual install:[/dim] {hint}")
+                    console.print(f"      [dim]Manual install:[/dim] {cmd.display}")
             except subprocess.TimeoutExpired:
                 console.print(f"  [red]>[/red] {c.component} timed out")
-                console.print(f"      [dim]Manual install:[/dim] {hint}")
+                console.print(f"      [dim]Manual install:[/dim] {cmd.display}")
             except Exception as e:
                 console.print(f"  [red]>[/red] {c.component} error: {e}")
-                console.print(f"      [dim]Manual install:[/dim] {hint}")
+                console.print(f"      [dim]Manual install:[/dim] {cmd.display}")
 
     # --fix: repair workspace
     if fix:

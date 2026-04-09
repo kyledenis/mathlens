@@ -1,98 +1,101 @@
 ---
 name: mathviz
-description: Generate verified mathematical visualizations using MathLens — prove correctness first, then render.
+description: Generate verified mathematical visualizations. Use when explaining math concepts that benefit from animation or diagrams — eigenvalues, convergence, transformations, proofs. Formally verifies math in Lean 4 before rendering Manim animations.
 user_invocable: true
 ---
 
-# MathLens /mathviz Skill
+# MathLens — Verified Mathematical Visualization
 
-MathLens generates verified mathematical visualizations. Every diagram, graph, or plot is proven correct before rendering—no visualization shows invalid mathematics.
+You have access to `mathlens`, a CLI tool that formally verifies mathematical statements in Lean 4 and generates animated visualizations with Manim.
+
+**Core principle:** Verify first, visualize second. Never show wrong math.
 
 ## When to Use
 
-Use the `/mathviz` skill to:
-- Create publication-quality mathematical diagrams (proofs, constructions, function behavior)
-- Verify mathematical properties before visualization
-- Generate interactive plots with guaranteed correctness
-- Build educational materials backed by formal verification
+- The user asks to visualize a math concept
+- You're explaining something that's easier to see than read
+- The user wants to verify a mathematical claim
+- You want to proactively offer a visualization during a math explanation
 
-## Available Commands
+## Commands
 
-The MathLens CLI provides these commands:
+### Full pipeline (verify + visualize)
 
-### `mathlens explore`
-Survey the mathematical space. Parse expressions, identify structure, and generate preview descriptions without full verification.
+```bash
+mathlens explore "why does the harmonic series diverge"
+```
 
-### `mathlens deep`
-Detailed structural analysis. Decompose expressions into components, trace dependencies, and explore the mathematical landscape.
+### Production quality
 
-### `mathlens prove`
-Formal verification. Prove correctness of mathematical claims, verify invariants, and confirm properties before visualization.
+```bash
+mathlens deep "the fundamental theorem of calculus"
+```
 
-### `mathlens viz`
-Render visualization. Generate the final diagram, plot, or interactive output. Only succeeds when proof is complete.
+### Verification only
+
+```bash
+mathlens prove "the sum of 1/n^2 converges to pi^2/6"
+```
+
+### Visualization only (no verification)
+
+```bash
+mathlens vis "eigenvalue decomposition as a linear transformation"
+mathlens viz "eigenvalue decomposition as a linear transformation"  # alternative spelling
+```
+
+### Knowledge base
+
+```bash
+mathlens history                    # list past explorations
+mathlens search "convergence"       # full-text search
+mathlens show eigenvalues           # view exploration details
+```
 
 ## Reading Results
 
-Each result includes a **verification badge**:
-- ✓ **VERIFIED** — Mathematics is proven correct. Safe to share and publish.
-- ✗ **REFUTED** — Claimed property does not hold. Visualization will not render.
-- ⚠ **PARTIAL** — Some aspects verified, others incomplete. See flags for details.
+After running a command, check the output for:
 
-Only VERIFIED results produce visualizations.
+1. **Verification badge** — the most important signal:
+   - `✓ Verified` — Lean 4 accepted the proof. Math is correct.
+   - `⚠ Unverified` — couldn't verify (Mathlib gap or timeout). Likely correct but not proven.
+   - `✗ Refuted` — mathematically incorrect. **Do NOT show the visualization.**
+   - `○ Not checked` — verification was skipped.
 
-## The Refuted Invariant
+2. **Output path** — where the video/image was rendered
+3. **Key insights** — summary bullet points
+4. **Workspace artifacts** — proof.lean, scene.py, summary.md in the workspace directory
 
-**Never show wrong math.** MathLens refuses to render visualizations of unproven or incorrect mathematics. This is non-negotiable. If your expression has issues, the `viz` command will fail with details on what to fix.
+## Critical Invariant
+
+**If verification returns REFUTED:** Tell the user the math is incorrect. Do NOT present a visualization of wrong math. Explain what went wrong using the failure reason and Lean output.
+
+**If verification returns UNVERIFIED:** Proceed with the visualization but add a clear disclaimer that formal verification couldn't confirm the math.
 
 ## Proactive Offering
 
-When you encounter mathematical content that could benefit from verification and visualization, proactively suggest:
+When explaining a mathematical concept that would benefit from visualization:
 
-> Would you like me to use `/mathviz` to verify and visualize this? I can prove correctness first, then generate a diagram.
+> "This might be easier to see than read. Want me to generate a verified visualization?"
 
-## Available Flags
+## Flags
 
-### Common Flags
-- `--format` — Output format: `svg`, `png`, `interactive`, `latex`, `ascii` (default: `svg`)
-- `--verify-only` — Run proof stage without rendering visualization
-- `--strict` — Require all sub-expressions to be proven; fail if any remain unverified
-- `--interactive` — Generate interactive plot (web-based, requires compatible format)
-- `--labels` — Include expression labels and annotations on diagram
-
-### Performance Flags
-- `--fast` — Skip optional verification steps; use cached proofs
-- `--parallel` — Parallelize verification of independent sub-claims
-- `--timeout` — Set proof timeout in seconds (default: 60)
-
-### Output Flags
-- `--width`, `--height` — Diagram dimensions in pixels
-- `--theme` — Color theme: `light`, `dark`, `print` (default: `light`)
-- `--title` — Add title to visualization
-- `--caption` — Add caption or description
-
-## Example Workflow
+Override any setting per-run:
 
 ```bash
-# Explore the mathematical structure
-mathlens explore "∑(n=1..∞) 1/n²"
-
-# Perform detailed analysis
-mathlens deep "∑(n=1..∞) 1/n²" --identify-convergence
-
-# Prove convergence
-mathlens prove "∑(n=1..∞) 1/n² = π²/6" --strict
-
-# Render verified diagram
-mathlens viz "∑(n=1..∞) 1/n² = π²/6" --format=svg --title="Basel Problem"
+mathlens explore "topic" --format diagram     # output: video|frames|diagram
+mathlens explore "topic" --provider local     # LLM: api|cli|local
+mathlens explore "topic" --local              # shorthand for --provider local
+mathlens explore "topic" --no-verify          # skip Lean 4 verification
+mathlens explore "topic" --quality production # render quality
+mathlens explore "topic" --quiet              # minimal output
 ```
 
-## Integration with Claude Code
+## Configuration
 
-When invoked via `/mathviz` in Claude Code, the skill:
-1. Parses your mathematical claim
-2. Routes through `explore` → `deep` → `prove` pipeline
-3. Renders visualization only if `prove` succeeds
-4. Returns annotated diagram with verification metadata
-
-If verification fails, you'll receive specific feedback on what's incorrect—fix the mathematics, not the diagram.
+```bash
+mathlens config show                          # view settings
+mathlens config set provider.default cli      # use Claude subscription
+mathlens config profile personal              # personal defaults
+mathlens doctor                               # check dependencies
+```

@@ -7,6 +7,7 @@ from typing import Optional
 
 import httpx
 
+from mathlens.lifecycle import register_client
 from mathlens.providers.base import LLMResponse, ProviderCapabilities, Tier
 
 
@@ -39,6 +40,7 @@ class OllamaProvider:
         self._endpoint = endpoint.rstrip("/")
         # Local models can be very slow — 30 min catches hangs without interfering
         self._client = httpx.AsyncClient(timeout=1800)
+        register_client(self._client)
         tiers = _estimate_tiers(model)
         self._formalization_tier = tiers[0]
         self._scene_tier = tiers[1]

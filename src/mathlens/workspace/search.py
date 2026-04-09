@@ -78,14 +78,21 @@ class SearchIndex:
     def search(self, query: str, limit: int = 20) -> list[SearchResult]:
         if not query.strip():
             return []
-        cursor = self._conn.execute(
-            "SELECT slug, topic, snippet(explorations_fts, 2, '<b>', '</b>', '...', 32), rank FROM explorations_fts WHERE explorations_fts MATCH ? ORDER BY rank LIMIT ?",
-            (query, limit),
-        )
-        return [
-            SearchResult(slug=r[0], topic=r[1], snippet=r[2], rank=r[3])
-            for r in cursor.fetchall()
-        ]
+        # Quote as a phrase to prevent FTS5 syntax errors from user input
+        safe_query = f'"{query}"'
+        try:
+            cursor = self._conn.execute(
+                "SELECT slug, topic, snippet(explorations_fts, 2, '<b>', '</b>', '...', 32), rank "
+                "FROM explorations_fts WHERE explorations_fts MATCH ? ORDER BY rank LIMIT ?",
+                (safe_query, limit),
+            )
+            return [
+                SearchResult(slug=r[0], topic=r[1], snippet=r[2], rank=r[3])
+                for r in cursor.fetchall()
+            ]
+        except sqlite3.OperationalError:
+            # Malformed query — fall back to empty results rather than crash
+            return []
 
     def remove_exploration(self, slug: str) -> None:
         self._conn.execute("DELETE FROM explorations_fts WHERE slug = ?", (slug,))

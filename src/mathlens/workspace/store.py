@@ -33,7 +33,14 @@ class WorkspaceStore:
         return self._root
 
     def path_for(self, slug: str) -> Path:
-        """Return the workspace directory for *slug*."""
+        """Return the workspace directory for *slug*.
+
+        Raises ValueError if the slug would escape the workspace root
+        (e.g. via ``../`` path traversal).
+        """
+        resolved = (self._root / slug).resolve()
+        if not resolved.is_relative_to(self._root.resolve()):
+            raise ValueError(f"Invalid slug — path traversal detected: {slug!r}")
         return self._root / slug
 
     # ------------------------------------------------------------------

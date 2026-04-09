@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from mathlens.lifecycle import register_process, unregister_process
+from mathlens.workspace.atomic import atomic_write_text
 from mathlens.models import (
     Badge,
     OutputFormat,
@@ -86,12 +87,16 @@ class Visualizer:
     # ------------------------------------------------------------------
 
     async def generate_scene_code(
-        self, scenes: list[ScenePlan], topic: str
+        self,
+        scenes: list[ScenePlan],
+        topic: str,
+        workspace_dir: Optional[Path] = None,
     ) -> str:
         """Generate Manim scene source code from a list of ScenePlans.
 
         The generated code is saved to workspace_dir/scene_01.py and returned.
         """
+        target_dir = workspace_dir or self._workspace_dir
         scene_descriptions = "\n\n".join(
             f"Scene {i + 1}: {scene.title}\n"
             f"Description: {scene.description}\n"
@@ -110,8 +115,8 @@ class Visualizer:
         )
         code = self._extract_code(response.content)
 
-        scene_path = self._workspace_dir / "scene_01.py"
-        scene_path.write_text(code)
+        scene_path = target_dir / "scene_01.py"
+        atomic_write_text(scene_path, code)
 
         return code
 
@@ -231,8 +236,8 @@ class Visualizer:
             temperature=0.1,
         )
         code = self._extract_code(response.content)
-        simplified_path = self._workspace_dir / "scene_simplified.py"
-        simplified_path.write_text(code)
+        simplified_path = original_path.parent / "scene_simplified.py"
+        atomic_write_text(simplified_path, code)
         return str(simplified_path)
 
     # ------------------------------------------------------------------

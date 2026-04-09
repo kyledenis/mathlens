@@ -9,6 +9,7 @@ from typing import Optional
 
 from mathlens.lifecycle import register_process, unregister_process
 from mathlens.models import PipelineMode, VerificationResult, VerificationStatus
+from mathlens.workspace.atomic import atomic_write_text
 from mathlens.providers.base import LLMProvider
 
 # ---------------------------------------------------------------------------
@@ -63,6 +64,7 @@ class Verifier:
         self,
         statements: list[str],
         mode: PipelineMode,
+        workspace_dir: Optional[Path] = None,
     ) -> VerificationResult:
         """Attempt to verify *statements* using Lean 4."""
         if not statements:
@@ -73,6 +75,7 @@ class Verifier:
                 duration_seconds=0.0,
             )
 
+        target_dir = workspace_dir or self._workspace_dir
         start = time.monotonic()
 
         # Ask the LLM to produce Lean 4 source.
@@ -85,9 +88,9 @@ class Verifier:
         lean_code = self._extract_lean_code(response.content)
 
         # Persist to disk so Lean can be invoked on it.
-        proof_path = self._workspace_dir / "proof.lean"
-        self._workspace_dir.mkdir(parents=True, exist_ok=True)
-        proof_path.write_text(lean_code, encoding="utf-8")
+        proof_path = target_dir / "proof.lean"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(proof_path, lean_code)
 
         timeout = self._timeout_for(mode)
 
