@@ -35,7 +35,7 @@ class TestLoadFromToml:
         s = MathLensSettings.from_toml(toml_file)
         assert s.provider.cli.backend == "custom-backend"
         # Other cli defaults preserved
-        assert s.provider.cli.timeout == 1800
+        assert s.provider.cli.timeout == 300
 
 
 # ---------------------------------------------------------------------------

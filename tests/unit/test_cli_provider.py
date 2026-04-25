@@ -36,7 +36,7 @@ class TestCLISubprocessProviderComplete:
             response = await provider.complete("solve x+1=2")
 
         assert response.content == "result"
-        assert response.model == "claude-code"
+        assert response.model == "sonnet"
 
     @pytest.mark.asyncio
     async def test_complete_with_system_prompt(self):

@@ -40,11 +40,30 @@ BACKEND_CAPABILITIES: dict[str, ProviderCapabilities] = {
     ),
 }
 
+# Default model for mathlens CLI calls — fast and cost-effective.
+# This is passed via --model so it doesn't change the user's
+# Claude Code default model.
+DEFAULT_CLI_MODEL = "sonnet"
+
+# Maximum spend per CLI call in USD — safety cap to prevent runaway usage.
+DEFAULT_MAX_BUDGET_USD = 0.50
+
 
 class CLISubprocessProvider:
-    """LLM provider that delegates to a local CLI tool via subprocess."""
+    """LLM provider that delegates to a local CLI tool via subprocess.
 
-    def __init__(self, backend: str = "claude-code", timeout: int = 1800) -> None:
+    Passes --model and --max-budget-usd to claude -p so that:
+    1. mathlens always uses a specific model (not the user's default)
+    2. Each call has a cost ceiling to prevent runaway token usage
+    """
+
+    def __init__(
+        self,
+        backend: str = "claude-code",
+        timeout: int = 300,
+        model: str = DEFAULT_CLI_MODEL,
+        max_budget_usd: float = DEFAULT_MAX_BUDGET_USD,
+    ) -> None:
         if backend not in BACKEND_COMMANDS:
             raise ValueError(
                 f"Unknown backend {backend!r}. "
@@ -52,6 +71,8 @@ class CLISubprocessProvider:
             )
         self._backend = backend
         self._timeout = timeout
+        self._model = model
+        self._max_budget_usd = max_budget_usd
         self._cmd_prefix = BACKEND_COMMANDS[backend]
 
     @property
@@ -76,7 +97,12 @@ class CLISubprocessProvider:
         if response_format == "json":
             full_prompt = f"{full_prompt}\n\nRespond with valid JSON only."
 
-        cmd = [*self._cmd_prefix, full_prompt]
+        cmd = list(self._cmd_prefix)
+        # Session-specific flags — don't touch the user's Claude Code config
+        if self._backend == "claude-code":
+            cmd += ["--model", self._model]
+            cmd += ["--max-budget-usd", str(self._max_budget_usd)]
+        cmd.append(full_prompt)
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -97,7 +123,6 @@ class CLISubprocessProvider:
                 f"CLI backend {self._backend!r} timed out after {self._timeout}s"
             )
         except (asyncio.CancelledError, KeyboardInterrupt):
-            # Ctrl+C or task cancellation — kill the subprocess
             process.kill()
             await process.wait()
             unregister_process(process)
@@ -112,7 +137,7 @@ class CLISubprocessProvider:
                 f"{process.returncode}: {error_text}"
             )
 
-        return LLMResponse(content=stdout.decode().strip(), model=self._backend)
+        return LLMResponse(content=stdout.decode().strip(), model=self._model)
 
     async def health_check(self) -> bool:
         binary = self._cmd_prefix[0]

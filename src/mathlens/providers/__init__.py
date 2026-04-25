@@ -27,6 +27,8 @@ def build_providers(settings: MathLensSettings) -> dict[str, LLMProvider]:
     providers["cli"] = CLISubprocessProvider(
         backend=settings.provider.cli.backend,
         timeout=settings.provider.cli.timeout,
+        model=settings.provider.cli.model,
+        max_budget_usd=settings.provider.cli.max_budget_usd,
     )
     api = AnthropicAPIProvider.from_env(model=settings.provider.api.model)
     if api is not None:

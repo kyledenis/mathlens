@@ -21,7 +21,9 @@ else:
 
 class CLIProviderSettings(BaseModel):
     backend: str = "claude-code"
-    timeout: int = 1800  # 30 min — only catches runaway processes, never normal use
+    timeout: int = 300           # 5 min — generous but not infinite
+    model: str = "sonnet"        # explicit model — doesn't touch user's Claude Code default
+    max_budget_usd: float = 0.50 # safety cap per call — prevents runaway token usage
 
 
 class APIProviderSettings(BaseModel):
