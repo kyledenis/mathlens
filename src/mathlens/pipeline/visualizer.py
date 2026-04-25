@@ -33,18 +33,35 @@ from mathlens.providers.base import LLMProvider
 # ---------------------------------------------------------------------------
 
 SCENE_GEN_SYSTEM = """\
-Write Manim CE Python code. Start with `from manim import *`.
-Subclass Scene, implement construct(self). Under 80 lines total.
-Output ONLY valid Python code — nothing else.
+Write Manim CE Python code. Output ONLY valid Python — nothing else.
+Start with `from manim import *`. One Scene subclass. Under 100 lines.
 
-Code pattern to follow:
-- Start with a title Text at screen center, self.wait(1), then FadeOut
-- Add visual elements ONE at a time with Write/Create, each followed by a \
-Text caption explaining it, then self.wait(1)
-- Show equations with MathTex AFTER the visuals that motivate them
-- Use FadeOut to clear between sections
-- End with the key result highlighted
-- Every shape/equation must have a Text label near it explaining its meaning\
+Structure the scene as a mini-lesson in 5 acts:
+
+ACT 1 — HOOK (5s): Show a thought-provoking question as Text at center. \
+self.wait(2), FadeOut.
+
+ACT 2 — PREREQUISITES (10-15s): Briefly introduce any concept the viewer \
+needs. E.g. if the topic uses complex numbers, show the complex plane and \
+explain what i means. Use simple visuals + a caption at .to_edge(DOWN).
+
+ACT 3 — BUILD INTUITION (20-30s): The core visual explanation. Show the \
+geometry, the movement, the transformation. Let the viewer SEE the answer \
+before any equations. Animate slowly (run_time=3+). Use color consistently: \
+BLUE for real parts, YELLOW for key objects, RED for results.
+
+ACT 4 — FORMALIZE (10s): Now show the equation that captures what we just \
+saw. Use MathTex. The equation should feel like confirmation, not revelation.
+
+ACT 5 — CONCLUSION (5s): FadeOut everything. Show the final key result \
+centered, highlighted with SurroundingRectangle. self.wait(2).
+
+Layout rules (CRITICAL — prevents text overlap):
+- Only ONE caption (Text, font_size=24, .to_edge(DOWN)) visible at a time
+- ALWAYS FadeOut the previous caption before showing the next
+- Labels on shapes: font_size=20, buff=0.3
+- Before each new act, FadeOut ALL objects from the previous act
+- Use self.wait(1) between steps\
 """
 
 QUALITY_MAP: dict[PipelineMode, RenderQuality] = {

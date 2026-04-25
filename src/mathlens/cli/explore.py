@@ -21,9 +21,6 @@ from mathlens.ui.progress import PipelineProgress
 _CONFIG_PATH = Path.home() / ".config" / "mathlens" / "config.toml"
 
 
-_progress = PipelineProgress()
-
-
 def run_explore(
     query: str,
     settings: MathLensSettings,
@@ -34,6 +31,7 @@ def run_explore(
 ) -> ExplorationResult:
     """Build pipeline and run, showing a live spinner for each stage."""
     orchestrator = build_pipeline(settings)
+    progress = PipelineProgress(mode)
     output_format: Optional[OutputFormat] = None
     if format_override is not None:
         output_format = OutputFormat(format_override)
@@ -56,10 +54,10 @@ def run_explore(
     def on_stage(stage: PipelineStage, event: str) -> None:
         if event == "start":
             stage_starts[stage] = time.monotonic()
-            status.update(f"  {_progress.format_stage_start(stage)}")
+            status.update(f"  {progress.format_stage_start(stage)}")
         elif event == "done":
             elapsed = time.monotonic() - stage_starts.get(stage, time.monotonic())
-            console.print(_progress.format_stage_done(stage, elapsed))
+            console.print(progress.format_stage_done(stage, elapsed))
 
     async def _run() -> ExplorationResult:
         return await orchestrator.run(
@@ -71,6 +69,7 @@ def run_explore(
         )
 
     console.print()
+    console.print(f"  {progress.format_total_estimate()}")
     with console.status("  Initializing...", spinner="dots") as status:
         try:
             result = asyncio.run(_run())
