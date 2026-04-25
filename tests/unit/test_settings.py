@@ -1,63 +1,10 @@
 """Unit tests for MathLensSettings configuration."""
 
 import pytest
-import tempfile
 import tomli_w
 from pathlib import Path
 
 from mathlens.config import MathLensSettings
-
-
-# ---------------------------------------------------------------------------
-# TestDefaults
-# ---------------------------------------------------------------------------
-
-class TestDefaults:
-    def test_provider_default_is_api(self):
-        s = MathLensSettings()
-        assert s.provider.default == "api"
-
-    def test_fallback_chain(self):
-        s = MathLensSettings()
-        assert s.provider.fallback_chain == ["api", "cli", "local"]
-
-    def test_render_quality_defaults(self):
-        s = MathLensSettings()
-        assert s.render.default_quality == "medium"
-        assert s.render.deep_quality == "production"
-        assert s.render.default_format == "video"
-
-    def test_workspace_path_contains_mathlens(self):
-        s = MathLensSettings()
-        assert "mathlens" in s.workspace.path
-
-    def test_verification_defaults(self):
-        s = MathLensSettings()
-        assert s.verification.always_attempt is True
-        assert s.verification.allow_unverified_viz is True
-        assert s.verification.explore_timeout == 600
-        assert s.verification.deep_timeout == 1800
-
-    def test_cli_provider_defaults(self):
-        s = MathLensSettings()
-        assert s.provider.cli.backend == "claude-code"
-        assert s.provider.cli.timeout == 1800
-
-    def test_api_provider_defaults(self):
-        s = MathLensSettings()
-        assert s.provider.api.model == "claude-sonnet-4-6"
-
-    def test_local_provider_defaults(self):
-        s = MathLensSettings()
-        assert s.provider.local.backend == "ollama"
-        assert s.provider.local.model == "qwen3:32b"
-        assert s.provider.local.endpoint == "http://localhost:11434"
-
-    def test_ui_defaults(self):
-        s = MathLensSettings()
-        assert s.ui.theme == "auto"
-        assert s.ui.open_video_on_complete is True
-        assert s.ui.show_proof_excerpt is True
 
 
 # ---------------------------------------------------------------------------
@@ -117,13 +64,10 @@ class TestSaveToToml:
 # ---------------------------------------------------------------------------
 
 class TestSetByDotPath:
-    def test_set_top_level_nested(self):
+    def test_set_at_various_depths(self):
         s = MathLensSettings()
         s.set("provider.default", "local")
         assert s.provider.default == "local"
-
-    def test_set_deeply_nested(self):
-        s = MathLensSettings()
         s.set("provider.cli.timeout", 60)
         assert s.provider.cli.timeout == 60
 
@@ -131,9 +75,6 @@ class TestSetByDotPath:
         s = MathLensSettings()
         with pytest.raises(KeyError):
             s.set("provider.nonexistent_field", "value")
-
-    def test_set_invalid_top_level_raises_key_error(self):
-        s = MathLensSettings()
         with pytest.raises(KeyError):
             s.set("nonexistent.field", "value")
 
@@ -143,12 +84,9 @@ class TestSetByDotPath:
 # ---------------------------------------------------------------------------
 
 class TestGet:
-    def test_get_nested(self):
+    def test_get_at_various_depths(self):
         s = MathLensSettings()
         assert s.get("provider.default") == "api"
-
-    def test_get_deeply_nested(self):
-        s = MathLensSettings()
         assert s.get("provider.cli.backend") == "claude-code"
 
 

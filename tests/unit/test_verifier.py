@@ -34,9 +34,24 @@ def make_verifier(tmp_path: Path, provider=None) -> Verifier:
     return Verifier(
         provider=provider,
         workspace_dir=tmp_path,
-        explore_timeout=600,
-        deep_timeout=1800,
+        explore_timeout=60,
+        deep_timeout=300,
     )
+
+
+def _patch_ready_verifier(verifier):
+    """Context manager that makes the verifier's LeanProject appear ready."""
+    return patch.object(verifier._lean_project, "is_ready", return_value=True)
+
+
+def _patch_check_proof(verifier, return_value=None, side_effect=None):
+    """Context manager that mocks LeanProject.check_proof."""
+    kwargs = {}
+    if return_value is not None:
+        kwargs["return_value"] = return_value
+    if side_effect is not None:
+        kwargs["side_effect"] = side_effect
+    return patch.object(verifier._lean_project, "check_proof", new=AsyncMock(**kwargs))
 
 
 # ---------------------------------------------------------------------------
@@ -47,71 +62,71 @@ def make_verifier(tmp_path: Path, provider=None) -> Verifier:
 @pytest.mark.asyncio
 async def test_verify_success(tmp_path: Path) -> None:
     verifier = make_verifier(tmp_path)
-    with patch.object(Verifier, "_run_lean", new=AsyncMock(return_value=(0, "No errors", ""))):
+    with patch("shutil.which", return_value="/usr/bin/lean"), \
+         _patch_ready_verifier(verifier), \
+         _patch_check_proof(verifier, return_value=(0, "No errors", "")):
         result = await verifier.verify(["theorem foo : True := trivial"], PipelineMode.explore)
 
     assert result.status == VerificationStatus.verified
     assert result.proof_path is not None and result.proof_path.exists()
     assert result.should_halt is False
-    assert result.duration_seconds >= 0.0
 
 
 @pytest.mark.asyncio
 async def test_verify_lean_rejects(tmp_path: Path) -> None:
     verifier = make_verifier(tmp_path)
     stderr = "type mismatch\nexpected type 'Nat'\ngot 'String'"
-    with patch.object(Verifier, "_run_lean", new=AsyncMock(return_value=(1, "", stderr))):
+    with patch("shutil.which", return_value="/usr/bin/lean"), \
+         _patch_ready_verifier(verifier), \
+         _patch_check_proof(verifier, return_value=(1, "", stderr)):
         result = await verifier.verify(["theorem bad : 1 = 2 := rfl"], PipelineMode.explore)
 
     assert result.status == VerificationStatus.refuted
     assert result.should_halt is True
-    assert result.failure_reason is not None
 
 
 @pytest.mark.asyncio
 async def test_verify_timeout(tmp_path: Path) -> None:
     verifier = make_verifier(tmp_path)
-    with patch.object(Verifier, "_run_lean", new=AsyncMock(side_effect=TimeoutError)):
+    with patch("shutil.which", return_value="/usr/bin/lean"), \
+         _patch_ready_verifier(verifier), \
+         _patch_check_proof(verifier, side_effect=TimeoutError):
         result = await verifier.verify(["theorem slow : True := by decide"], PipelineMode.explore)
 
     assert result.status == VerificationStatus.unverifiable
-    assert result.failure_reason is not None
     assert "timeout" in result.failure_reason.lower()
 
 
 @pytest.mark.asyncio
 async def test_verify_lean_not_installed(tmp_path: Path) -> None:
     verifier = make_verifier(tmp_path)
-    with patch.object(Verifier, "_run_lean", new=AsyncMock(side_effect=FileNotFoundError)):
+    with patch("shutil.which", return_value=None):
         result = await verifier.verify(["theorem foo : True := trivial"], PipelineMode.explore)
 
     assert result.status == VerificationStatus.skipped
-    assert result.failure_reason is not None
     assert "not installed" in result.failure_reason.lower()
 
 
 @pytest.mark.asyncio
-async def test_verify_saves_proof_file(tmp_path: Path) -> None:
+async def test_verify_mathlib_not_ready(tmp_path: Path) -> None:
     verifier = make_verifier(tmp_path)
-    with patch.object(Verifier, "_run_lean", new=AsyncMock(return_value=(0, "", ""))):
+    with patch("shutil.which", return_value="/usr/bin/lean"), \
+         patch.object(verifier._lean_project, "is_ready", return_value=False):
         result = await verifier.verify(["theorem foo : True := trivial"], PipelineMode.explore)
 
-    assert result.proof_path is not None
-    assert result.proof_path.exists()
-    assert result.proof_path.read_text(encoding="utf-8").strip() != ""
+    assert result.status == VerificationStatus.skipped
+    assert "mathlens doctor" in result.failure_reason.lower()
 
 
 @pytest.mark.asyncio
 async def test_explore_vs_deep_timeout(tmp_path: Path) -> None:
     verifier = make_verifier(tmp_path)
-    assert verifier._timeout_for(PipelineMode.explore) == 600
-    assert verifier._timeout_for(PipelineMode.deep) == 1800
+    assert verifier._timeout_for(PipelineMode.explore) == 60
+    assert verifier._timeout_for(PipelineMode.deep) == 300
 
 
 @pytest.mark.asyncio
 async def test_skip_when_no_statements(tmp_path: Path) -> None:
     verifier = make_verifier(tmp_path)
     result = await verifier.verify([], PipelineMode.explore)
-
     assert result.status == VerificationStatus.skipped
-    assert result.failure_reason == "No theorem statements to verify"

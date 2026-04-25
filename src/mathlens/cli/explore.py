@@ -19,14 +19,9 @@ from mathlens.ui.errors import format_error, format_refuted_error
 from mathlens.ui.progress import PipelineProgress
 
 _CONFIG_PATH = Path.home() / ".config" / "mathlens" / "config.toml"
-_progress = PipelineProgress()
 
-_STAGE_ORDER = [
-    PipelineStage.planning,
-    PipelineStage.verification,
-    PipelineStage.visualization,
-    PipelineStage.summarization,
-]
+
+_progress = PipelineProgress()
 
 
 def run_explore(
@@ -55,8 +50,6 @@ def run_explore(
 
     # Run with live progress spinner
     stage_starts: dict[PipelineStage, float] = {}
-    result_holder: list[ExplorationResult] = []
-    exception_holder: list[Exception] = []
 
     import time
 
@@ -115,6 +108,33 @@ def display_result(result: ExplorationResult) -> None:
     console.print(f"[dim]Completed in {format_duration(result.duration_seconds)}[/dim]")
 
 
+def _auto_open_output(result: ExplorationResult) -> None:
+    """Open the rendered visualization output, if any."""
+    import platform
+    import subprocess as _sp
+
+    if result.visualization is None:
+        return
+    output_dir = result.visualization.output_path
+    if not output_dir.is_dir():
+        return
+    files = (
+        list(output_dir.glob("**/*.mp4"))
+        + list(output_dir.glob("**/*.gif"))
+        + list(output_dir.glob("**/*.png"))
+    )
+    if not files:
+        return
+    target = str(files[0])
+    system = platform.system()
+    if system == "Darwin":
+        _sp.run(["open", target], check=False)
+    elif system == "Linux":
+        _sp.run(["xdg-open", target], check=False)
+    elif system == "Windows":
+        _sp.run(["start", target], check=False, shell=True)
+
+
 @app.command()
 def explore(
     query: str = typer.Argument(..., help="Math topic or question to explore."),
@@ -123,7 +143,8 @@ def explore(
     local: bool = typer.Option(False, "--local", help="Shorthand for --provider local."),
     format: Optional[str] = typer.Option(None, "--format", "-f", help="Output format: video, frames, or diagram."),
     quality: Optional[str] = typer.Option(None, "--quality", "-q", help="Render quality: low, medium, high, production."),
-    no_verify: bool = typer.Option(False, "--no-verify", help="Skip formal verification step."),
+    verify: bool = typer.Option(False, "--verify", help="Enable formal verification (off by default in explore)."),
+    no_verify: bool = typer.Option(False, "--no-verify", help="Skip formal verification step (default in explore)."),
     verify_timeout: Optional[int] = typer.Option(None, "--verify-timeout", help="Verification timeout in seconds."),
     retry: bool = typer.Option(False, "--retry", help="Retry a previously failed exploration."),
     force: bool = typer.Option(False, "--force", help="Force re-run even if already completed."),
@@ -131,8 +152,16 @@ def explore(
     no_open: bool = typer.Option(False, "--no-open", help="Do not open the output file when done."),
     json_output: bool = typer.Option(False, "--json", help="Output result as JSON."),
 ) -> None:
-    """Explore a math topic: plan → verify → visualize → summarize."""
+    """Explore a math topic: plan → visualize → summarize.
+
+    Verification is skipped by default in explore mode for speed.
+    Use --verify to enable it, or use `mathlens deep` for full rigour.
+    """
     install_signal_handlers()
+
+    # Explore mode: skip verification by default unless --verify is passed
+    skip_verify = not verify if not no_verify else True
+
     try:
         settings = MathLensSettings.from_toml(_CONFIG_PATH)
         apply_flag_overrides(
@@ -143,12 +172,14 @@ def explore(
             format=format,
             quality=quality,
             verify_timeout=verify_timeout,
-            no_verify=no_verify,
+            no_verify=skip_verify,
             no_open=no_open,
             quiet=quiet,
         )
-        result = run_explore(query, settings, format_override=format, no_verify=no_verify, quiet=quiet)
+        result = run_explore(query, settings, format_override=format, no_verify=skip_verify, quiet=quiet)
         display_result(result)
+        if settings.ui.open_video_on_complete and not no_open:
+            _auto_open_output(result)
     except KeyboardInterrupt:
         cleanup()
         console.print("\n  [dim]Interrupted. All background processes stopped.[/dim]")

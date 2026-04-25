@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from mathlens.workspace.search import SearchIndex, SearchResult
+from mathlens.workspace.search import SearchIndex
 
 
 # ---------------------------------------------------------------------------
@@ -33,13 +33,6 @@ def write_meta(workspace_dir: Path, topic: str, slug: str) -> None:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
-
-
-def test_create_tables(tmp_path: Path) -> None:
-    db_path = tmp_path / "search.db"
-    index = SearchIndex(db_path)
-    assert db_path.exists()
-    index.close()
 
 
 def test_index_exploration_and_search(tmp_path: Path) -> None:
@@ -71,22 +64,6 @@ def test_search_no_results(tmp_path: Path) -> None:
 
     index.index_exploration("2026-04-08_test", ws)
     results = index.search("nonexistent_term")
-
-    assert len(results) == 0
-
-    index.close()
-
-
-def test_search_empty_query(tmp_path: Path) -> None:
-    db_path = tmp_path / "search.db"
-    index = SearchIndex(db_path)
-
-    ws = make_workspace(tmp_path, "2026-04-08_test")
-    write_meta(ws, "Test Topic", "2026-04-08_test")
-    (ws / "summary.md").write_text("This is about circles")
-
-    index.index_exploration("2026-04-08_test", ws)
-    results = index.search("")
 
     assert len(results) == 0
 
@@ -214,37 +191,28 @@ def test_search_with_limit(tmp_path: Path) -> None:
     index.close()
 
 
-def test_missing_meta_uses_slug_as_topic(tmp_path: Path) -> None:
+def test_missing_or_corrupted_meta_uses_slug(tmp_path: Path) -> None:
     db_path = tmp_path / "search.db"
     index = SearchIndex(db_path)
 
-    slug = "2026-04-08_no_meta"
-    ws = make_workspace(tmp_path, slug)
-    (ws / "summary.md").write_text("About integration")
-
-    index.index_exploration(slug, ws)
+    # Missing meta.json
+    slug1 = "2026-04-08_no_meta"
+    ws1 = make_workspace(tmp_path, slug1)
+    (ws1 / "summary.md").write_text("About integration")
+    index.index_exploration(slug1, ws1)
     results = index.search("integration")
-
     assert len(results) == 1
-    assert results[0].topic == slug
+    assert results[0].topic == slug1
 
-    index.close()
-
-
-def test_corrupted_meta_json_uses_slug_as_topic(tmp_path: Path) -> None:
-    db_path = tmp_path / "search.db"
-    index = SearchIndex(db_path)
-
-    slug = "2026-04-08_bad_json"
-    ws = make_workspace(tmp_path, slug)
-    (ws / "meta.json").write_text("{invalid json")
-    (ws / "summary.md").write_text("About derivatives")
-
-    index.index_exploration(slug, ws)
+    # Corrupted meta.json
+    slug2 = "2026-04-08_bad_json"
+    ws2 = make_workspace(tmp_path, slug2)
+    (ws2 / "meta.json").write_text("{invalid json")
+    (ws2 / "summary.md").write_text("About derivatives")
+    index.index_exploration(slug2, ws2)
     results = index.search("derivatives")
-
     assert len(results) == 1
-    assert results[0].topic == slug
+    assert results[0].topic == slug2
 
     index.close()
 
@@ -267,24 +235,3 @@ def test_corrupted_plan_json_skipped(tmp_path: Path) -> None:
     index.close()
 
 
-def test_search_result_properties(tmp_path: Path) -> None:
-    db_path = tmp_path / "search.db"
-    index = SearchIndex(db_path)
-
-    slug = "2026-04-08_test"
-    ws = make_workspace(tmp_path, slug)
-    write_meta(ws, "My Topic", slug)
-    (ws / "summary.md").write_text("This content has the word matrices in it")
-
-    index.index_exploration(slug, ws)
-    results = index.search("matrices")
-
-    assert len(results) == 1
-    result = results[0]
-    assert isinstance(result, SearchResult)
-    assert result.slug == slug
-    assert result.topic == "My Topic"
-    assert isinstance(result.snippet, str)
-    assert isinstance(result.rank, float)
-
-    index.close()

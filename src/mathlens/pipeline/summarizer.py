@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Optional
 
 from mathlens.models import ExplorationPlan, Summary, VerificationResult, VerificationStatus
+from mathlens.pipeline.response_cleaner import clean_json_response
 from mathlens.workspace.atomic import atomic_write_text
 from mathlens.providers.base import LLMProvider
 
@@ -37,11 +37,17 @@ class Summarizer:
         plan: ExplorationPlan,
         verification: VerificationResult,
         workspace_dir: Optional[Path] = None,
+        reasoning_context: Optional[str] = None,
     ) -> Summary:
         """Build a summary from the plan and verification result."""
         target_dir = workspace_dir or self._workspace_dir
         verification_context = self._build_verification_context(verification)
         prompt = self._build_prompt(plan, verification_context)
+        if reasoning_context:
+            prompt += (
+                f"\n\nAdditional mathematical reasoning from upstream stages "
+                f"(use this to enrich your summary):\n{reasoning_context}"
+            )
 
         response = await self._provider.complete(
             prompt,
@@ -87,13 +93,10 @@ class Summarizer:
         )
 
     def _parse_response(self, content: str) -> dict:
-        """Strip markdown fences, parse JSON; fall back to raw content as explanation."""
-        stripped = content.strip()
-        stripped = re.sub(r"^```(?:json)?\s*", "", stripped)
-        stripped = re.sub(r"\s*```$", "", stripped)
-        stripped = stripped.strip()
+        """Extract and parse JSON from LLM response; fall back to raw content as explanation."""
+        cleaned = clean_json_response(content)
         try:
-            return json.loads(stripped)
+            return json.loads(cleaned.code)
         except json.JSONDecodeError:
             return {"explanation": content, "key_insights": [], "prerequisites": [], "further_reading": []}
 

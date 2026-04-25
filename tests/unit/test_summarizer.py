@@ -118,13 +118,8 @@ class TestParseResponse:
         assert "harmonic series" in data["explanation"].lower()
         assert len(data["key_insights"]) == 2
 
-    def test_parse_with_json_fence(self, summarizer: Summarizer) -> None:
+    def test_parse_with_fence(self, summarizer: Summarizer) -> None:
         fenced = f"```json\n{MOCK_RESPONSE_JSON}\n```"
-        data = summarizer._parse_response(fenced)
-        assert "explanation" in data
-
-    def test_parse_with_plain_fence(self, summarizer: Summarizer) -> None:
-        fenced = f"```\n{MOCK_RESPONSE_JSON}\n```"
         data = summarizer._parse_response(fenced)
         assert "explanation" in data
 
@@ -136,33 +131,15 @@ class TestParseResponse:
 
 
 class TestFormatMarkdown:
-    def test_format_markdown_includes_topic(
+    def test_format_markdown_includes_all_sections(
         self, summarizer: Summarizer, sample_plan: ExplorationPlan
     ) -> None:
         data = json.loads(MOCK_RESPONSE_JSON)
         md = summarizer._format_markdown(data, sample_plan)
         assert "Harmonic Series Divergence" in md
-
-    def test_format_markdown_includes_key_insights(
-        self, summarizer: Summarizer, sample_plan: ExplorationPlan
-    ) -> None:
-        data = json.loads(MOCK_RESPONSE_JSON)
-        md = summarizer._format_markdown(data, sample_plan)
         assert "Key Insights" in md
         assert "Grouping terms" in md
-
-    def test_format_markdown_includes_prerequisites(
-        self, summarizer: Summarizer, sample_plan: ExplorationPlan
-    ) -> None:
-        data = json.loads(MOCK_RESPONSE_JSON)
-        md = summarizer._format_markdown(data, sample_plan)
         assert "Prerequisites" in md
         assert "sequences-basics" in md
-
-    def test_format_markdown_includes_further_reading(
-        self, summarizer: Summarizer, sample_plan: ExplorationPlan
-    ) -> None:
-        data = json.loads(MOCK_RESPONSE_JSON)
-        md = summarizer._format_markdown(data, sample_plan)
         assert "Further Reading" in md
         assert "p-series-convergence" in md

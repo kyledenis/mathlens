@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 from mathlens.models import (
+    Badge,
     ExplorationMeta,
     ExplorationPlan,
     OutputFormat,
@@ -103,7 +105,9 @@ class Orchestrator:
         # Stage 1: Planning
         # ------------------------------------------------------------------
         _emit(PipelineStage.planning, "start")
-        plan = await self._planner.plan(query, output_format)
+        plan = await self._planner.plan(
+            query, output_format, deep=(mode == PipelineMode.deep),
+        )
         meta = self._store.create(plan, mode)
         self._store.complete_stage(plan.slug, PipelineStage.planning)
         self._store.set_status(plan.slug, StageStatus.running)
@@ -112,52 +116,66 @@ class Orchestrator:
         workspace_dir = self._store.path_for(plan.slug)
 
         # ------------------------------------------------------------------
-        # Stage 2: Verification
+        # Deep mode: run verification and visualization in parallel
         # ------------------------------------------------------------------
-        _emit(PipelineStage.verification, "start")
-        if skip_verification:
-            verification = VerificationResult(
-                status=VerificationStatus.skipped,
-                lean_output="",
-                failure_reason="Verification skipped by caller",
-                duration_seconds=0.0,
+        if mode == PipelineMode.deep and not skip_verification:
+            verification, visualization = await self._run_parallel(
+                plan, meta, mode, workspace_dir, _emit,
             )
         else:
-            verification = await self._run_verification(plan, mode, workspace_dir)
+            # Explore mode (or explicit --no-verify): sequential
+            # Stage 2: Verification
+            _emit(PipelineStage.verification, "start")
+            if skip_verification:
+                verification = VerificationResult(
+                    status=VerificationStatus.skipped,
+                    lean_output="",
+                    failure_reason="Verification skipped by caller",
+                    duration_seconds=0.0,
+                )
+            else:
+                verification = await self._run_verification(plan, mode, workspace_dir)
 
-        self._store.save_stage_result(plan.slug, PipelineStage.verification, verification)
-        self._store.complete_stage(plan.slug, PipelineStage.verification)
-        _emit(PipelineStage.verification, "done")
+            self._store.save_stage_result(plan.slug, PipelineStage.verification, verification)
+            self._store.complete_stage(plan.slug, PipelineStage.verification)
+            _emit(PipelineStage.verification, "done")
 
-        # ------------------------------------------------------------------
-        # CRITICAL INVARIANT: REFUTED → halt immediately
-        # ------------------------------------------------------------------
-        if verification.should_halt:
-            self._store.set_status(plan.slug, StageStatus.completed)
-            self._index_result(meta)
-            return ExplorationResult(
-                plan=plan,
-                verification=verification,
-                visualization=None,
-                summary=None,
-                meta=meta,
-                duration_seconds=monotonic() - start,
-            )
+            # CRITICAL INVARIANT: REFUTED → halt immediately
+            if verification.should_halt:
+                self._store.set_status(plan.slug, StageStatus.completed)
+                self._index_result(meta)
+                return ExplorationResult(
+                    plan=plan,
+                    verification=verification,
+                    visualization=None,
+                    summary=None,
+                    meta=meta,
+                    duration_seconds=monotonic() - start,
+                )
 
-        # ------------------------------------------------------------------
-        # Stage 3: Visualization
-        # ------------------------------------------------------------------
-        _emit(PipelineStage.visualization, "start")
-        visualization = await self._run_visualization(plan, meta, mode, verification)
-        self._store.save_stage_result(plan.slug, PipelineStage.visualization, visualization)
-        self._store.complete_stage(plan.slug, PipelineStage.visualization)
-        _emit(PipelineStage.visualization, "done")
+            # Stage 3: Visualization
+            _emit(PipelineStage.visualization, "start")
+            visualization = await self._run_visualization(plan, meta, mode, verification)
+            self._store.save_stage_result(plan.slug, PipelineStage.visualization, visualization)
+            self._store.complete_stage(plan.slug, PipelineStage.visualization)
+            _emit(PipelineStage.visualization, "done")
 
         # ------------------------------------------------------------------
         # Stage 4: Summarization
         # ------------------------------------------------------------------
         _emit(PipelineStage.summarization, "start")
-        summary = await self._run_summarization(plan, verification, workspace_dir)
+
+        # Collect reasoning from upstream stages for richer summaries
+        reasoning_parts: list[str] = []
+        for stage in (self._verifier, self._visualizer):
+            val = getattr(stage, "_last_reasoning", None)
+            if isinstance(val, str) and val:
+                reasoning_parts.append(val)
+        reasoning_context = "\n\n".join(reasoning_parts) if reasoning_parts else None
+
+        summary = await self._run_summarization(
+            plan, verification, workspace_dir, reasoning_context=reasoning_context,
+        )
         self._store.complete_stage(plan.slug, PipelineStage.summarization)
         _emit(PipelineStage.summarization, "done")
         self._store.set_status(plan.slug, StageStatus.completed)
@@ -188,6 +206,61 @@ class Orchestrator:
     # ------------------------------------------------------------------
     # Internal stage runners with error isolation
     # ------------------------------------------------------------------
+
+    async def _run_parallel(
+        self,
+        plan: ExplorationPlan,
+        meta: ExplorationMeta,
+        mode: PipelineMode,
+        workspace_dir: Path,
+        _emit: Callable[[PipelineStage, str], None],
+    ) -> tuple[VerificationResult, VisualizationResult | None]:
+        """Run verification and visualization concurrently (deep mode).
+
+        If verification returns REFUTED, visualization is cancelled.
+        """
+        _emit(PipelineStage.verification, "start")
+        _emit(PipelineStage.visualization, "start")
+
+        # Use a placeholder verification status for visualization badge
+        placeholder = VerificationResult(
+            status=VerificationStatus.skipped,
+            lean_output="",
+            duration_seconds=0.0,
+        )
+
+        verify_task = asyncio.create_task(
+            self._run_verification(plan, mode, workspace_dir)
+        )
+        viz_task = asyncio.create_task(
+            self._run_visualization(plan, meta, mode, placeholder)
+        )
+
+        # Wait for verification first to check for REFUTED
+        verification = await verify_task
+        self._store.save_stage_result(plan.slug, PipelineStage.verification, verification)
+        self._store.complete_stage(plan.slug, PipelineStage.verification)
+        _emit(PipelineStage.verification, "done")
+
+        if verification.should_halt:
+            viz_task.cancel()
+            try:
+                await viz_task
+            except asyncio.CancelledError:
+                pass
+            _emit(PipelineStage.visualization, "done")
+            self._store.set_status(plan.slug, StageStatus.completed)
+            self._index_result(meta)
+            return verification, None
+
+        visualization = await viz_task
+        # Patch the badge with the actual verification status
+        visualization.verification_badge = Badge.from_status(verification.status)
+        self._store.save_stage_result(plan.slug, PipelineStage.visualization, visualization)
+        self._store.complete_stage(plan.slug, PipelineStage.visualization)
+        _emit(PipelineStage.visualization, "done")
+
+        return verification, visualization
 
     async def _run_verification(
         self, plan: ExplorationPlan, mode: PipelineMode, workspace_dir: Path
@@ -224,11 +297,19 @@ class Orchestrator:
         )
 
     async def _run_summarization(
-        self, plan: ExplorationPlan, verification: VerificationResult, workspace_dir: Path
+        self,
+        plan: ExplorationPlan,
+        verification: VerificationResult,
+        workspace_dir: Path,
+        reasoning_context: str | None = None,
     ) -> Summary:
         """Summarize the exploration; return a fallback Summary on any exception."""
         try:
-            return await self._summarizer.summarize(plan, verification, workspace_dir=workspace_dir)
+            return await self._summarizer.summarize(
+                plan, verification,
+                workspace_dir=workspace_dir,
+                reasoning_context=reasoning_context,
+            )
         except Exception:
             return Summary(
                 explanation=f"Summary unavailable for '{plan.topic}'.",

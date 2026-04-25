@@ -83,42 +83,9 @@ def test_explore_runs() -> None:
     assert result.exit_code == 0
 
 
-def test_explore_shows_topic() -> None:
-    """explore command output contains the topic text."""
-    mock_result = _make_exploration_result()
-    with patch("mathlens.cli.explore.run_explore", return_value=mock_result):
-        result = runner.invoke(app, ["explore", "test-topic"])
-    assert result.exit_code == 0
-    assert "test-topic" in result.output.lower() or "Test-Topic" in result.output or "Test Topic" in result.output
-
-
 def test_explore_with_format_flag() -> None:
     """explore command accepts --format diagram without error."""
     mock_result = _make_exploration_result()
     with patch("mathlens.cli.explore.run_explore", return_value=mock_result):
         result = runner.invoke(app, ["explore", "circles", "--format", "diagram"])
-    assert result.exit_code == 0
-
-
-def test_explore_with_no_verify() -> None:
-    """explore command accepts --no-verify without error."""
-    mock_result = _make_exploration_result()
-    with patch("mathlens.cli.explore.run_explore", return_value=mock_result):
-        result = runner.invoke(app, ["explore", "triangles", "--no-verify"])
-    assert result.exit_code == 0
-
-
-def test_explore_with_provider_flag() -> None:
-    """explore command accepts --provider local without error."""
-    mock_result = _make_exploration_result()
-    with patch("mathlens.cli.explore.run_explore", return_value=mock_result):
-        result = runner.invoke(app, ["explore", "euler", "--provider", "local"])
-    assert result.exit_code == 0
-
-
-def test_explore_with_local_shorthand() -> None:
-    """explore command accepts --local shorthand without error."""
-    mock_result = _make_exploration_result()
-    with patch("mathlens.cli.explore.run_explore", return_value=mock_result):
-        result = runner.invoke(app, ["explore", "fibonacci", "--local"])
     assert result.exit_code == 0

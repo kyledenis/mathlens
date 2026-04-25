@@ -8,12 +8,14 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path as _Path
 from typing import NamedTuple
 
 import typer
 from rich import box
 
 from mathlens.cli.app import app
+from mathlens.config.settings import MathLensSettings
 from mathlens.ui.console import console, make_table
 
 _SUGGESTIONS = [
@@ -86,7 +88,25 @@ def _check_python() -> _Check:
 
 def _check_lean() -> _Check:
     path = shutil.which("lean")
-    return _Check("Lean 4", path is not None, path or "not found")
+    if not path:
+        return _Check("Lean 4", False, "not found")
+    lake_path = shutil.which("lake")
+    if not lake_path:
+        return _Check("Lean 4", False, f"{path} (lake not found — install elan)")
+    return _Check("Lean 4", True, path)
+
+
+def _check_mathlib() -> _Check:
+    settings = MathLensSettings.from_toml(_Path.home() / ".config" / "mathlens" / "config.toml")
+    workspace = _Path(settings.workspace.path).expanduser()
+    project_dir = workspace / "lean-project"
+    lakefile = project_dir / "lakefile.lean"
+    lake_dir = project_dir / ".lake"
+    if lakefile.exists() and lake_dir.exists():
+        return _Check("Mathlib", True, str(project_dir))
+    if lakefile.exists():
+        return _Check("Mathlib", False, "project exists but not built")
+    return _Check("Mathlib", False, "not set up")
 
 
 def _check_manim() -> _Check:
@@ -107,6 +127,16 @@ def _check_latex() -> _Check:
     for binary in ("pdflatex", "xelatex", "lualatex"):
         path = shutil.which(binary)
         if path:
+            # Check that Manim's required package (standalone.cls) is present
+            try:
+                result = subprocess.run(
+                    ["kpsewhich", "standalone.cls"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if result.returncode != 0 or not result.stdout.strip():
+                    return _Check("LaTeX", False, f"{path} (missing standalone.cls)")
+            except Exception:
+                pass  # kpsewhich not available — assume OK
             return _Check("LaTeX", True, path)
     return _Check("LaTeX", False, "not found")
 
@@ -158,8 +188,13 @@ _INSTALL_HINTS: dict[str, dict[str, _InstallCmd]] = {
         "windows": _cmd(["winget", "install", "ffmpeg"]),
     },
     "LaTeX": {
-        "macos": _cmd(["brew", "install", "--cask", "basictex"]),
-        "linux": _cmd(["sudo", "apt", "install", "-y", "texlive-base"]),
+        "macos": _shell_cmd(
+            "brew install --cask basictex && "
+            "sudo tlmgr update --self && "
+            "sudo tlmgr install standalone preview dvisvgm doublestroke "
+            "setspace rsfs jknapltx wasy wasysym sttools mathtools"
+        ),
+        "linux": _cmd(["sudo", "apt", "install", "-y", "texlive", "texlive-latex-extra"]),
         "windows": _cmd(["winget", "install", "MiKTeX.MiKTeX"]),
     },
     "claude (CLI)": {
@@ -200,7 +235,7 @@ def doctor(
     """Check dependencies and workspace health."""
     plat = _platform()
     required = [_check_python(), _check_manim(), _check_ffmpeg()]
-    optional = [_check_lean(), _check_latex(), _check_claude(), _check_ollama()]
+    optional = [_check_lean(), _check_mathlib(), _check_latex(), _check_claude(), _check_ollama()]
 
     checks = required + optional
 
@@ -246,9 +281,28 @@ def doctor(
 
     # --install: attempt to install missing deps
     if install and failed:
+        import asyncio as _asyncio
+
         console.print()
         console.print("[bold]Installing missing dependencies...[/bold]")
         for c in failed:
+            # Mathlib has special async setup via Lake
+            if c.component == "Mathlib":
+                console.print(f"  [dim]>[/dim] Setting up Mathlib (this downloads ~2 GB, may take a few minutes)...")
+                try:
+                    from mathlens.workspace.lean_project import LeanProject
+                    settings = MathLensSettings.from_toml(_Path.home() / ".config" / "mathlens" / "config.toml")
+                    workspace = _Path(settings.workspace.path).expanduser()
+                    project = LeanProject(workspace / "lean-project")
+                    success, msg = _asyncio.run(project.setup(timeout=600))
+                    if success:
+                        console.print(f"  [green]>[/green] Mathlib ready")
+                    else:
+                        console.print(f"  [red]>[/red] Mathlib setup failed: {msg}")
+                except Exception as e:
+                    console.print(f"  [red]>[/red] Mathlib error: {e}")
+                continue
+
             cmd = _install_hint(c.component)
             if not cmd:
                 console.print(f"  [yellow]-[/yellow] {c.component}: no automatic installer for {plat}")
@@ -256,7 +310,6 @@ def doctor(
             console.print(f"  [dim]>[/dim] Installing {c.component}...")
             try:
                 if cmd.shell:
-                    # Shell required for pipe commands (curl | sh). Args is [full_string].
                     run_result = subprocess.run(
                         cmd.args[0], shell=True, capture_output=True, text=True, timeout=300,
                     )
@@ -279,9 +332,6 @@ def doctor(
 
     # --fix: repair workspace
     if fix:
-        from pathlib import Path as _Path
-
-        from mathlens.config.settings import MathLensSettings
         from mathlens.workspace.repair import WorkspaceRepair
 
         config_path = _Path.home() / ".config" / "mathlens" / "config.toml"

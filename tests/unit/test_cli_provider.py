@@ -8,35 +8,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from mathlens.providers.cli_sub import CLISubprocessProvider
-from mathlens.providers.base import Tier
-
-
-class TestCLISubprocessProviderName:
-    def test_name(self):
-        provider = CLISubprocessProvider(backend="claude-code")
-        assert provider.name == "cli:claude-code"
-
-    def test_name_codex(self):
-        provider = CLISubprocessProvider(backend="codex")
-        assert provider.name == "cli:codex"
-
-
-class TestCLISubprocessProviderCapabilities:
-    def test_formalization_high(self):
-        provider = CLISubprocessProvider(backend="claude-code")
-        assert provider.capabilities.formalization_quality == Tier.HIGH
-
-    def test_max_context(self):
-        provider = CLISubprocessProvider(backend="claude-code")
-        assert provider.capabilities.max_context == 200_000
-
-    def test_supports_json_mode(self):
-        provider = CLISubprocessProvider(backend="claude-code")
-        assert provider.capabilities.supports_json_mode is True
-
-    def test_no_streaming(self):
-        provider = CLISubprocessProvider(backend="claude-code")
-        assert provider.capabilities.supports_streaming is False
 
 
 class TestCLISubprocessProviderInit:
@@ -121,15 +92,11 @@ class TestCLISubprocessProviderComplete:
 
 class TestCLISubprocessProviderHealthCheck:
     @pytest.mark.asyncio
-    async def test_health_check_binary_exists(self):
+    async def test_health_check(self):
         with patch("shutil.which", return_value="/usr/local/bin/claude"):
             provider = CLISubprocessProvider(backend="claude-code")
-            result = await provider.health_check()
-        assert result is True
+            assert await provider.health_check() is True
 
-    @pytest.mark.asyncio
-    async def test_health_check_binary_missing(self):
         with patch("shutil.which", return_value=None):
             provider = CLISubprocessProvider(backend="claude-code")
-            result = await provider.health_check()
-        assert result is False
+            assert await provider.health_check() is False

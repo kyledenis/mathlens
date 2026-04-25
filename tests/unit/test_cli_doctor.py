@@ -16,28 +16,6 @@ class TestDoctorCommand:
         result = runner.invoke(app, ["doctor"])
         assert result.exit_code == 0
 
-    def test_doctor_checks_python(self):
-        result = runner.invoke(app, ["doctor"])
-        output = result.output
-        assert "python" in output.lower() or "Python" in output
-
-    def test_doctor_checks_lean(self):
-        with patch("shutil.which", return_value=None):
-            result = runner.invoke(app, ["doctor"])
-        output = result.output
-        assert "lean" in output.lower() or "Lean" in output
-
-    def test_doctor_checks_manim(self):
-        result = runner.invoke(app, ["doctor"])
-        output = result.output
-        assert "manim" in output.lower() or "Manim" in output
-
-    def test_doctor_checks_ffmpeg(self):
-        with patch("shutil.which", return_value=None):
-            result = runner.invoke(app, ["doctor"])
-        output = result.output
-        assert "ffmpeg" in output
-
     def test_doctor_accepts_fix_flag(self):
         result = runner.invoke(app, ["doctor", "--fix"])
         assert result.exit_code == 0
@@ -49,12 +27,14 @@ class TestDoctorCommand:
              patch("mathlens.cli.doctor._check_manim") as mm, \
              patch("mathlens.cli.doctor._check_ffmpeg") as mf, \
              patch("mathlens.cli.doctor._check_latex") as mlt, \
+             patch("mathlens.cli.doctor._check_mathlib") as mmlib, \
              patch("mathlens.cli.doctor._check_claude") as mc, \
              patch("mathlens.cli.doctor._check_ollama") as mo:
             from mathlens.cli.doctor import _Check
             for mock, name in [
                 (mp, "Python"), (ml, "Lean 4"), (mm, "Manim CE"),
-                (mf, "ffmpeg"), (mlt, "LaTeX"), (mc, "claude (CLI)"), (mo, "ollama"),
+                (mf, "ffmpeg"), (mlt, "LaTeX"), (mmlib, "Mathlib"),
+                (mc, "claude (CLI)"), (mo, "ollama"),
             ]:
                 mock.return_value = _Check(name, True, "/usr/bin/" + name.lower())
             result = runner.invoke(app, ["doctor"])

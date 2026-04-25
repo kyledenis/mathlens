@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
+import shutil
 import time
 from pathlib import Path
 from typing import Optional
 
-from mathlens.lifecycle import register_process, unregister_process
 from mathlens.models import PipelineMode, VerificationResult, VerificationStatus
+from mathlens.pipeline.response_cleaner import clean_code_response
+from mathlens.pipeline.validation import validate_lean
 from mathlens.workspace.atomic import atomic_write_text
+from mathlens.workspace.lean_project import LeanProject
 from mathlens.providers.base import LLMProvider
 
 # ---------------------------------------------------------------------------
@@ -49,6 +51,8 @@ class Verifier:
         self._workspace_dir = Path(workspace_dir)
         self._explore_timeout = explore_timeout
         self._deep_timeout = deep_timeout
+        self._last_reasoning: str = ""
+        self._lean_project = LeanProject(self._workspace_dir / "lean-project")
 
     # ------------------------------------------------------------------
     # Public interface
@@ -78,6 +82,26 @@ class Verifier:
         target_dir = workspace_dir or self._workspace_dir
         start = time.monotonic()
 
+        # Check prerequisites
+        if shutil.which("lean") is None:
+            return VerificationResult(
+                status=VerificationStatus.skipped,
+                lean_output="",
+                failure_reason="Lean 4 is not installed",
+                duration_seconds=0.0,
+            )
+
+        if not self._lean_project.is_ready():
+            return VerificationResult(
+                status=VerificationStatus.skipped,
+                lean_output="",
+                failure_reason=(
+                    "Mathlib not set up. "
+                    "Run `mathlens doctor --install` to download Mathlib."
+                ),
+                duration_seconds=0.0,
+            )
+
         # Ask the LLM to produce Lean 4 source.
         prompt = "\n\n".join(statements)
         response = await self._provider.complete(
@@ -85,25 +109,41 @@ class Verifier:
             system=FORMALIZE_SYSTEM,
             temperature=0.0,
         )
-        lean_code = self._extract_lean_code(response.content)
+        cleaned = clean_code_response(response.content, "lean")
+        lean_code = cleaned.code
+        self._last_reasoning = cleaned.reasoning
 
-        # Persist to disk so Lean can be invoked on it.
+        # Validate — retry once if the output looks like prose, not code.
+        valid, error = validate_lean(lean_code)
+        if not valid:
+            retry_prompt = (
+                f"Your previous response was not valid Lean 4 code.\n"
+                f"Error: {error}\n\n"
+                f"Please respond with ONLY valid Lean 4 source code. "
+                f"No prose, no markdown fences, no explanations.\n\n"
+                f"{prompt}"
+            )
+            response = await self._provider.complete(
+                prompt=retry_prompt,
+                system=FORMALIZE_SYSTEM,
+                temperature=0.0,
+            )
+            cleaned = clean_code_response(response.content, "lean")
+            lean_code = cleaned.code
+            if cleaned.reasoning:
+                self._last_reasoning += "\n\n" + cleaned.reasoning
+
+        # Save proof to the exploration workspace for archival
         proof_path = target_dir / "proof.lean"
         target_dir.mkdir(parents=True, exist_ok=True)
         atomic_write_text(proof_path, lean_code)
 
+        # Typecheck via the shared Lake project (has Mathlib available)
         timeout = self._timeout_for(mode)
 
         try:
-            returncode, stdout, stderr = await self._run_lean(proof_path, timeout)
-        except FileNotFoundError:
-            duration = time.monotonic() - start
-            return VerificationResult(
-                status=VerificationStatus.skipped,
-                proof_path=proof_path,
-                lean_output="",
-                failure_reason="Lean 4 is not installed",
-                duration_seconds=duration,
+            returncode, stdout, stderr = await self._lean_project.check_proof(
+                lean_code, timeout=timeout,
             )
         except TimeoutError:
             duration = time.monotonic() - start
@@ -126,7 +166,7 @@ class Verifier:
                 duration_seconds=duration,
             )
 
-        # Non-zero return -- decide between REFUTED and UNVERIFIABLE.
+        # Non-zero return — decide between REFUTED and UNVERIFIABLE.
         refute_markers = ("type mismatch", "failed to synthesize", "unknown identifier")
         if any(marker in stderr for marker in refute_markers):
             status = VerificationStatus.refuted
@@ -146,56 +186,10 @@ class Verifier:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _run_lean(
-        self,
-        path: Path,
-        timeout: int,
-    ) -> tuple[int, str, str]:
-        """Run ``lean <path>`` and return (returncode, stdout, stderr)."""
-        proc = await asyncio.create_subprocess_exec(
-            "lean",
-            str(path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        register_process(proc)
-        try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=timeout,
-            )
-        except asyncio.TimeoutError as exc:
-            proc.kill()
-            await proc.wait()
-            unregister_process(proc)
-            raise TimeoutError from exc
-        except (asyncio.CancelledError, KeyboardInterrupt):
-            proc.kill()
-            await proc.wait()
-            unregister_process(proc)
-            raise
-        else:
-            unregister_process(proc)
-
-        return (
-            proc.returncode if proc.returncode is not None else 1,
-            stdout_bytes.decode(errors="replace"),
-            stderr_bytes.decode(errors="replace"),
-        )
-
     @staticmethod
     def _extract_lean_code(content: str) -> str:
-        """Strip markdown fences from *content* if present."""
-        lines = content.splitlines()
-        result: list[str] = []
-        in_fence = False
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith("```"):
-                in_fence = not in_fence
-                continue
-            result.append(line)
-        return "\n".join(result)
+        """Extract clean Lean code from LLM output."""
+        return clean_code_response(content, "lean").code
 
     @staticmethod
     def _extract_failure_reason(stderr: str) -> Optional[str]:

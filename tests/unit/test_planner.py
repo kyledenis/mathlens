@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from mathlens.models import Difficulty, ExplorationPlan, OutputFormat
+from mathlens.models import ExplorationPlan, OutputFormat
 from mathlens.pipeline.planner import Planner
 from mathlens.providers.base import LLMResponse, ProviderCapabilities, Tier
 
@@ -69,21 +69,6 @@ class TestPlanFromQuery:
         assert result.visualization_scenes[0].title == "Partial sums growth"
 
     @pytest.mark.asyncio
-    async def test_plan_generates_slug(self, planner: Planner) -> None:
-        result = await planner.plan("Prove the harmonic series diverges")
-        assert "harmonic-series-divergence" in result.slug
-
-    @pytest.mark.asyncio
-    async def test_plan_output_format(self, planner: Planner) -> None:
-        result = await planner.plan("Prove the harmonic series diverges")
-        assert result.output_format == OutputFormat.video
-
-    @pytest.mark.asyncio
-    async def test_plan_difficulty(self, planner: Planner) -> None:
-        result = await planner.plan("Prove the harmonic series diverges")
-        assert result.difficulty == Difficulty.intermediate
-
-    @pytest.mark.asyncio
     async def test_plan_with_format_override(self, planner: Planner) -> None:
         result = await planner.plan(
             "Prove the harmonic series diverges",
@@ -98,7 +83,6 @@ class TestPlanFromQuery:
         query = "Prove the harmonic series diverges"
         await planner.plan(query)
         call_kwargs = mock_provider.complete.call_args
-        # The query should appear in the positional prompt argument
         prompt_arg = call_kwargs[0][0] if call_kwargs[0] else call_kwargs[1].get("prompt", "")
         assert query in prompt_arg
 

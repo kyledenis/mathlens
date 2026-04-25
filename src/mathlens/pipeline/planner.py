@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
-import re
 from datetime import date
 from typing import Optional
 
+from mathlens.pipeline.response_cleaner import clean_json_response
+from mathlens.pipeline.validation import validate_json
 from mathlens.models import (
     Difficulty,
     ExplorationPlan,
@@ -17,23 +18,40 @@ from mathlens.models import (
 from mathlens.providers.base import LLMProvider
 
 
-PLANNER_SYSTEM = """\
+PLANNER_SYSTEM_EXPLORE = """\
+You are a mathematics education planner. Given a user query, produce a concise JSON plan.
+
+IMPORTANT: Keep it focused. Generate at most 2 visualization scenes using only simple \
+Manim primitives (Text, MathTex, Circle, Line, Arrow, Axes). Avoid complex objects \
+like ComplexPlane, TracedPath, or TransformMatchingTex.
+
+Fields:
+- topic (str): slug identifier (e.g. "harmonic-series-divergence")
+- intent (str): one of "prove", "explain", "explore", "compare"
+- theorem_statements (list[str]): 1-3 precise statements
+- visualization_scenes (list[object]): 1-2 scenes, each with title, description, \
+key_objects (list[str]), animation_hints (list[str])
+- output_format (str): one of "video", "frames", "diagram"
+- difficulty (str): one of "elementary", "intermediate", "advanced"
+- prerequisites (list[str]): topic slugs
+
+Respond with only valid JSON. No explanation, no markdown fences.\
+"""
+
+PLANNER_SYSTEM_DEEP = """\
 You are a mathematics education planner. Given a user query about a mathematical topic,
 produce a structured JSON plan with the following fields:
 
-- topic (str): a slug-style identifier for the topic (e.g. "harmonic-series-divergence")
+- topic (str): slug identifier (e.g. "harmonic-series-divergence")
 - intent (str): one of "prove", "explain", "explore", "compare"
 - theorem_statements (list[str]): precise mathematical statements to address
-- visualization_scenes (list[object]): each with:
-    - title (str)
-    - description (str)
-    - key_objects (list[str])
-    - animation_hints (list[str])
+- visualization_scenes (list[object]): 3-5 scenes, each with title, description, \
+key_objects (list[str]), animation_hints (list[str])
 - output_format (str): one of "video", "frames", "diagram"
 - difficulty (str): one of "elementary", "intermediate", "advanced"
 - prerequisites (list[str]): prerequisite topic slugs
 
-Respond with only valid JSON. Do not include any explanation or markdown fences.\
+Respond with only valid JSON. No explanation, no markdown fences.\
 """
 
 
@@ -47,12 +65,14 @@ class Planner:
         self,
         query: str,
         output_format: Optional[OutputFormat] = None,
+        deep: bool = False,
     ) -> ExplorationPlan:
         """Call the LLM provider to produce an ExplorationPlan from a user query."""
+        system = PLANNER_SYSTEM_DEEP if deep else PLANNER_SYSTEM_EXPLORE
         prompt = f"Plan a mathematical exploration for the following query:\n\n{query}"
         response = await self._provider.complete(
             prompt,
-            system=PLANNER_SYSTEM,
+            system=system,
             temperature=0.2,
             response_format="json",
         )
@@ -79,13 +99,9 @@ class Planner:
         return ExplorationPlan.model_validate(data)
 
     def _parse_response(self, content: str) -> dict:
-        """Strip markdown code fences if present and parse JSON."""
-        stripped = content.strip()
-        # Remove markdown code fences (```json ... ``` or ``` ... ```)
-        stripped = re.sub(r"^```(?:json)?\s*", "", stripped)
-        stripped = re.sub(r"\s*```$", "", stripped)
-        stripped = stripped.strip()
+        """Extract and parse JSON from LLM response, handling thinking traces and artifacts."""
+        cleaned = clean_json_response(content)
         try:
-            return json.loads(stripped)
+            return json.loads(cleaned.code)
         except json.JSONDecodeError as exc:
             raise ValueError(f"Failed to parse planner JSON response: {exc}") from exc

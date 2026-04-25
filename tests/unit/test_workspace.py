@@ -41,14 +41,9 @@ def test_create_exploration(tmp_workspace: Path, sample_plan: ExplorationPlan) -
     assert meta.topic == sample_plan.topic
     assert meta.status == StageStatus.pending
 
-
-def test_create_writes_plan(tmp_workspace: Path, sample_plan: ExplorationPlan) -> None:
-    store = make_store(tmp_workspace)
-    store.create(sample_plan, PipelineMode.explore)
-
-    plan_path = store.path_for(sample_plan.slug) / "plan.json"
+    # Also verifies plan.json was written and roundtrips correctly
+    plan_path = ws / "plan.json"
     assert plan_path.exists()
-
     loaded = ExplorationPlan.model_validate_json(plan_path.read_text())
     assert loaded.topic == sample_plan.topic
 
@@ -112,14 +107,6 @@ def test_find_by_topic(tmp_workspace: Path, sample_plan: ExplorationPlan) -> Non
     found = store.find_by_topic(sample_plan.topic)
     assert found is not None
     assert found.slug == sample_plan.slug
-
-
-def test_find_by_topic_not_found(
-    tmp_workspace: Path, sample_plan: ExplorationPlan
-) -> None:
-    store = make_store(tmp_workspace)
-    store.create(sample_plan, PipelineMode.explore)
-
     assert store.find_by_topic("Nonexistent Topic") is None
 
 

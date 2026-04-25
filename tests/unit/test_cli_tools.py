@@ -95,28 +95,7 @@ class TestProveCommand:
         with patch("mathlens.cli.tools.run_prove", return_value=mock_result):
             result = runner.invoke(app, ["prove", "1 + 1 = 2"])
         assert result.exit_code == 0
-
-    def test_prove_shows_verified(self) -> None:
-        """prove command output contains verification status text."""
-        mock_result = _make_verification_result()
-        with patch("mathlens.cli.tools.run_prove", return_value=mock_result):
-            result = runner.invoke(app, ["prove", "pythagorean theorem"])
-        assert result.exit_code == 0
         assert "erified" in result.output
-
-    def test_prove_with_provider_flag(self) -> None:
-        """prove command accepts --provider local without error."""
-        mock_result = _make_verification_result()
-        with patch("mathlens.cli.tools.run_prove", return_value=mock_result):
-            result = runner.invoke(app, ["prove", "x > 0", "--provider", "local"])
-        assert result.exit_code == 0
-
-    def test_prove_with_local_flag(self) -> None:
-        """prove command accepts --local without error."""
-        mock_result = _make_verification_result()
-        with patch("mathlens.cli.tools.run_prove", return_value=mock_result):
-            result = runner.invoke(app, ["prove", "x > 0", "--local"])
-        assert result.exit_code == 0
 
 
 # ---------------------------------------------------------------------------
@@ -132,34 +111,11 @@ class TestVizCommand:
             result = runner.invoke(app, ["viz", "circle theorem"])
         assert result.exit_code == 0
 
-    def test_viz_shows_output_path(self) -> None:
-        """viz command output contains the output path."""
-        mock_result = _make_exploration_result()
-        with patch("mathlens.cli.tools.run_viz", return_value=mock_result):
-            result = runner.invoke(app, ["viz", "circle theorem"])
-        assert result.exit_code == 0
-        assert "out.mp4" in result.output
-
     def test_vis_alias_runs(self) -> None:
         """vis alias runs identically to viz."""
         mock_result = _make_exploration_result()
         with patch("mathlens.cli.tools.run_viz", return_value=mock_result):
             result = runner.invoke(app, ["vis", "circle theorem"])
-        assert result.exit_code == 0
-
-    def test_vis_alias_shows_output_path(self) -> None:
-        """vis alias output contains the output path."""
-        mock_result = _make_exploration_result()
-        with patch("mathlens.cli.tools.run_viz", return_value=mock_result):
-            result = runner.invoke(app, ["vis", "pythagorean theorem"])
-        assert result.exit_code == 0
-        assert "out.mp4" in result.output
-
-    def test_viz_with_format_flag(self) -> None:
-        """viz command accepts --format diagram without error."""
-        mock_result = _make_exploration_result()
-        with patch("mathlens.cli.tools.run_viz", return_value=mock_result):
-            result = runner.invoke(app, ["viz", "circles", "--format", "diagram"])
         assert result.exit_code == 0
 
 

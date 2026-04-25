@@ -51,8 +51,8 @@ class RenderSettings(BaseModel):
 class VerificationSettings(BaseModel):
     always_attempt: bool = True
     allow_unverified_viz: bool = True
-    explore_timeout: int = 600   # 10 min — catches runaway Lean proofs
-    deep_timeout: int = 1800    # 30 min — complex proofs can take a long time
+    explore_timeout: int = 60    # 1 min — explore is for quick understanding
+    deep_timeout: int = 300     # 5 min — complex proofs with full rigour
 
 
 class WorkspaceSettings(BaseModel):

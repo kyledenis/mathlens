@@ -189,6 +189,8 @@ async def test_full_pipeline_success(
     assert result.visualization is not None
     assert result.summary is not None
     assert result.duration_seconds >= 0.0
+    assert result.plan.topic == "Pythagorean Theorem"
+    assert result.meta.slug == "pythagorean-theorem"
 
 
 @pytest.mark.asyncio
@@ -272,50 +274,29 @@ async def test_pipeline_skips_verify_when_requested(
 
 
 @pytest.mark.asyncio
-async def test_result_has_plan_and_meta(
-    orchestrator: Orchestrator,
-    plan: ExplorationPlan,
-) -> None:
-    result = await orchestrator.run(
-        query="Prove the Pythagorean Theorem",
-        mode=PipelineMode.explore,
-    )
-
-    assert result.plan.topic == plan.topic
-    assert result.meta.slug == plan.slug
-
-
-@pytest.mark.asyncio
-async def test_pipeline_sets_completed_status(
-    orchestrator: Orchestrator,
+async def test_pipeline_sets_completed_status_on_success_and_refuted(
+    mock_planner: AsyncMock,
+    mock_verifier: AsyncMock,
+    mock_visualizer: AsyncMock,
+    mock_summarizer: AsyncMock,
     mock_store: MagicMock,
 ) -> None:
-    """Store.set_status(COMPLETED) must be called at end of successful pipeline."""
-    await orchestrator.run(
-        query="Prove the Pythagorean Theorem",
-        mode=PipelineMode.explore,
+    """Store.set_status(COMPLETED) must be called at end of pipeline in both paths."""
+    # Success path
+    orchestrator = Orchestrator(
+        planner=mock_planner, verifier=mock_verifier,
+        visualizer=mock_visualizer, summarizer=mock_summarizer, store=mock_store,
     )
-
+    await orchestrator.run(query="Prove the Pythagorean Theorem", mode=PipelineMode.explore)
     status_calls = [c.args[1] for c in mock_store.set_status.call_args_list]
     assert StageStatus.completed in status_calls
 
-
-@pytest.mark.asyncio
-async def test_pipeline_refuted_sets_completed_status(
-    orchestrator: Orchestrator,
-    mock_verifier: AsyncMock,
-    mock_store: MagicMock,
-) -> None:
-    """Even on REFUTED halt, status must be set to COMPLETED."""
+    # Refuted path
+    mock_store.reset_mock()
     mock_verifier.verify = AsyncMock(
         return_value=_make_verification(VerificationStatus.refuted)
     )
-
-    await orchestrator.run(
-        query="Prove a false claim",
-        mode=PipelineMode.explore,
-    )
-
+    await orchestrator.run(query="Prove a false claim", mode=PipelineMode.explore)
     status_calls = [c.args[1] for c in mock_store.set_status.call_args_list]
     assert StageStatus.completed in status_calls
 
@@ -368,7 +349,7 @@ async def test_output_format_passed_to_planner(
     )
 
     mock_planner.plan.assert_called_once_with(
-        "Prove the Pythagorean Theorem", OutputFormat.frames
+        "Prove the Pythagorean Theorem", OutputFormat.frames, deep=False
     )
 
 
@@ -404,39 +385,29 @@ def orchestrator_with_index(
 
 
 @pytest.mark.asyncio
-async def test_index_result_called_on_success(
-    orchestrator_with_index: Orchestrator,
-    mock_search_index: MagicMock,
-    plan: ExplorationPlan,
-) -> None:
-    """SearchIndex.index_exploration must be called after a successful pipeline run."""
-    await orchestrator_with_index.run(
-        query="Prove the Pythagorean Theorem",
-        mode=PipelineMode.explore,
-    )
-
-    mock_search_index.index_exploration.assert_called_once_with(
-        plan.slug, mock_search_index.index_exploration.call_args[0][1]
-    )
-
-
-@pytest.mark.asyncio
-async def test_index_result_called_on_refuted(
+async def test_index_result_called_on_both_paths(
     orchestrator_with_index: Orchestrator,
     mock_verifier: AsyncMock,
     mock_search_index: MagicMock,
     plan: ExplorationPlan,
 ) -> None:
-    """SearchIndex.index_exploration must also be called on the REFUTED early-return path."""
+    """SearchIndex.index_exploration must be called on both success and refuted paths."""
+    # Success path
+    await orchestrator_with_index.run(
+        query="Prove the Pythagorean Theorem",
+        mode=PipelineMode.explore,
+    )
+    mock_search_index.index_exploration.assert_called_once()
+    assert mock_search_index.index_exploration.call_args[0][0] == plan.slug
+
+    # Refuted path
+    mock_search_index.reset_mock()
     mock_verifier.verify = AsyncMock(
         return_value=_make_verification(VerificationStatus.refuted)
     )
-
     await orchestrator_with_index.run(
         query="Prove a false claim",
         mode=PipelineMode.explore,
     )
-
-    mock_search_index.index_exploration.assert_called_once_with(
-        plan.slug, mock_search_index.index_exploration.call_args[0][1]
-    )
+    mock_search_index.index_exploration.assert_called_once()
+    assert mock_search_index.index_exploration.call_args[0][0] == plan.slug

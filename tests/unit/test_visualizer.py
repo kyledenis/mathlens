@@ -121,7 +121,7 @@ class TestRender:
             result = await viz.render(
                 scene_path=scene_path,
                 output_path=output_path,
-                mode=PipelineMode.explore,
+                mode=PipelineMode.deep,
                 verification_status=VerificationStatus.skipped,
             )
 
@@ -131,18 +131,12 @@ class TestRender:
 
 
 class TestQualityHelpers:
-    def test_quality_for_explore(self, tmp_path):
+    def test_quality_for_mode(self, tmp_path):
         viz = Visualizer(provider=MagicMock(), workspace_dir=tmp_path)
         assert viz._quality_for(PipelineMode.explore) == RenderQuality.medium
-
-    def test_quality_for_deep(self, tmp_path):
-        viz = Visualizer(provider=MagicMock(), workspace_dir=tmp_path)
         assert viz._quality_for(PipelineMode.deep) == RenderQuality.production
 
-    def test_manim_quality_flag_medium(self, tmp_path):
+    def test_manim_quality_flag(self, tmp_path):
         viz = Visualizer(provider=MagicMock(), workspace_dir=tmp_path)
         assert viz._manim_quality_flag(RenderQuality.medium) == "-qm"
-
-    def test_manim_quality_flag_production(self, tmp_path):
-        viz = Visualizer(provider=MagicMock(), workspace_dir=tmp_path)
         assert viz._manim_quality_flag(RenderQuality.production) == "-qh"

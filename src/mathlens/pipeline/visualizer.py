@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import time
 from pathlib import Path
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 from mathlens.lifecycle import register_process, unregister_process
+from mathlens.pipeline.response_cleaner import clean_code_response
+from mathlens.pipeline.validation import validate_python
 from mathlens.workspace.atomic import atomic_write_text
 from mathlens.models import (
     Badge,
@@ -28,16 +33,18 @@ from mathlens.providers.base import LLMProvider
 # ---------------------------------------------------------------------------
 
 SCENE_GEN_SYSTEM = """\
-You are a Manim Community Edition expert. Given a list of scene descriptions for a
-mathematical topic, generate a single Python file containing one or more Manim Scene
-subclasses that animate the described content.
+Write Manim CE Python code. Start with `from manim import *`.
+Subclass Scene, implement construct(self). Under 80 lines total.
+Output ONLY valid Python code — nothing else.
 
-Requirements:
-- Use only Manim CE (Community Edition) APIs.
-- Each scene class must subclass Scene and implement construct(self).
-- Include `from manim import *` at the top of the file.
-- Produce clean, runnable code with no placeholder comments.
-- Do not include any explanation or markdown fences — output Python code only.\
+Code pattern to follow:
+- Start with a title Text at screen center, self.wait(1), then FadeOut
+- Add visual elements ONE at a time with Write/Create, each followed by a \
+Text caption explaining it, then self.wait(1)
+- Show equations with MathTex AFTER the visuals that motivate them
+- Use FadeOut to clear between sections
+- End with the key result highlighted
+- Every shape/equation must have a Text label near it explaining its meaning\
 """
 
 QUALITY_MAP: dict[PipelineMode, RenderQuality] = {
@@ -53,8 +60,8 @@ MANIM_QUALITY_FLAGS: dict[RenderQuality, str] = {
 }
 
 RENDER_TIMEOUTS: dict[PipelineMode, int] = {
-    PipelineMode.explore: 600,   # 10 min — catches hung manim, not normal renders
-    PipelineMode.deep: 1800,     # 30 min — production 4K renders can be slow
+    PipelineMode.explore: 45,    # 45s — simple scenes render fast
+    PipelineMode.deep: 300,      # 5 min — production renders can be slow
 }
 
 
@@ -69,6 +76,7 @@ class Visualizer:
     def __init__(self, provider: LLMProvider, workspace_dir: Path) -> None:
         self._provider = provider
         self._workspace_dir = workspace_dir
+        self._last_reasoning: str = ""
 
     # ------------------------------------------------------------------
     # Quality helpers
@@ -97,26 +105,50 @@ class Visualizer:
         The generated code is saved to workspace_dir/scene_01.py and returned.
         """
         target_dir = workspace_dir or self._workspace_dir
-        scene_descriptions = "\n\n".join(
-            f"Scene {i + 1}: {scene.title}\n"
-            f"Description: {scene.description}\n"
-            f"Key objects: {', '.join(scene.key_objects)}\n"
-            f"Animation hints: {', '.join(scene.animation_hints)}"
-            for i, scene in enumerate(scenes)
+        self._last_reasoning = ""
+
+        # Build a focused teaching prompt from the scene plan
+        scene = scenes[0] if scenes else ScenePlan(
+            title="Overview", description=f"Visual overview of {topic}",
         )
         prompt = (
-            f"Generate Manim CE Python code for the following scenes about '{topic}':\n\n"
-            f"{scene_descriptions}"
+            f"Write a Manim scene about: {topic}\n"
+            f"Focus: {scene.title} — {scene.description}"
         )
+        code = await self._generate_single_scene(prompt)
+
+        scene_path = target_dir / "scene_01.py"
+        atomic_write_text(scene_path, code)
+
+        return code
+
+    async def _generate_single_scene(self, prompt: str) -> str:
+        """Generate code for a single scene with validation and one retry."""
         response = await self._provider.complete(
             prompt,
             system=SCENE_GEN_SYSTEM,
             temperature=0.2,
+            max_tokens=2048,
         )
-        code = self._extract_code(response.content)
+        cleaned = clean_code_response(response.content, "python")
+        code = cleaned.code
+        if cleaned.reasoning:
+            self._last_reasoning += cleaned.reasoning
 
-        scene_path = target_dir / "scene_01.py"
-        atomic_write_text(scene_path, code)
+        valid, error = validate_python(code)
+        if not valid:
+            retry_prompt = (
+                f"Your response was not valid Python. Error: {error}\n"
+                f"Output ONLY valid Python code.\n\n{prompt}"
+            )
+            response = await self._provider.complete(
+                retry_prompt,
+                system=SCENE_GEN_SYSTEM,
+                temperature=0.1,
+                max_tokens=2048,
+            )
+            cleaned = clean_code_response(response.content, "python")
+            code = cleaned.code
 
         return code
 
@@ -142,20 +174,33 @@ class Visualizer:
         timeout = RENDER_TIMEOUTS[mode]
 
         returncode, stdout, stderr = await self._run_manim(
-            scene_path, quality, timeout
+            scene_path, quality, timeout, output_dir=output_path,
         )
 
-        if returncode != 0:
-            # Fallback: generate a simplified scene and retry
+        if returncode != 0 and mode == PipelineMode.deep:
+            # Fallback: generate a simplified scene and retry (deep mode only)
             simplified_path = await self._generate_simplified_scene(scene_path)
             simplified = Path(simplified_path)
             returncode, stdout, stderr = await self._run_manim(
-                simplified, quality, timeout
+                simplified, quality, timeout, output_dir=output_path,
             )
             scene_path = simplified
 
         duration = time.monotonic() - start
         badge = Badge.from_status(verification_status)
+
+        # Validate that Manim actually produced output files
+        if output_path.is_dir():
+            output_files = (
+                list(output_path.glob("**/*.mp4"))
+                + list(output_path.glob("**/*.gif"))
+                + list(output_path.glob("**/*.png"))
+            )
+            if not output_files:
+                logger.warning(
+                    "Manim returned %d but produced no output files in %s",
+                    returncode, output_path,
+                )
 
         rendered_scene = RenderedScene(
             title=scene_path.stem,
@@ -179,11 +224,15 @@ class Visualizer:
     # ------------------------------------------------------------------
 
     async def _run_manim(
-        self, scene_path: Path, quality: RenderQuality, timeout: int
+        self, scene_path: Path, quality: RenderQuality, timeout: int,
+        output_dir: Path | None = None,
     ) -> tuple[int, str, str]:
         """Run manim render as a subprocess and return (returncode, stdout, stderr)."""
         quality_flag = self._manim_quality_flag(quality)
-        cmd = ["manim", "render", quality_flag, str(scene_path)]
+        cmd = ["manim", "render", quality_flag]
+        if output_dir is not None:
+            cmd += ["--media_dir", str(output_dir)]
+        cmd.append(str(scene_path))
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -235,9 +284,9 @@ class Visualizer:
             system=SCENE_GEN_SYSTEM,
             temperature=0.1,
         )
-        code = self._extract_code(response.content)
+        cleaned = clean_code_response(response.content, "python")
         simplified_path = original_path.parent / "scene_simplified.py"
-        atomic_write_text(simplified_path, code)
+        atomic_write_text(simplified_path, cleaned.code)
         return str(simplified_path)
 
     # ------------------------------------------------------------------
@@ -245,8 +294,5 @@ class Visualizer:
     # ------------------------------------------------------------------
 
     def _extract_code(self, content: str) -> str:
-        """Strip markdown code fences from LLM output, if present."""
-        stripped = content.strip()
-        stripped = re.sub(r"^```(?:python)?\s*", "", stripped)
-        stripped = re.sub(r"\s*```$", "", stripped)
-        return stripped.strip()
+        """Extract clean Python code from LLM output."""
+        return clean_code_response(content, "python").code

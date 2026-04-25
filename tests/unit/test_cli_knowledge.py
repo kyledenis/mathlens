@@ -119,11 +119,13 @@ def test_search_no_results(tmp_path: Path) -> None:
 
 def test_show_displays_exploration(tmp_path: Path) -> None:
     """show by topic name displays the exploration details."""
-    _create_exploration(tmp_path, "2026-04-08_euler-formula", "Euler Formula")
+    ws_dir = _create_exploration(tmp_path, "2026-04-08_euler-formula", "Euler Formula")
+    (ws_dir / "summary.md").write_text("Euler's beautiful formula connects e, i, and pi.")
     with patch("mathlens.cli.knowledge._get_workspace_root", return_value=tmp_path):
         result = runner.invoke(app, ["show", "Euler Formula"])
     assert result.exit_code == 0
     assert "Euler Formula" in result.output
+    assert "beautiful formula" in result.output
 
 
 def test_show_not_found(tmp_path: Path) -> None:
@@ -131,16 +133,6 @@ def test_show_not_found(tmp_path: Path) -> None:
     with patch("mathlens.cli.knowledge._get_workspace_root", return_value=tmp_path):
         result = runner.invoke(app, ["show", "Nonexistent Topic XYZ"])
     assert result.exit_code != 0 or "not found" in result.output.lower()
-
-
-def test_show_displays_summary(tmp_path: Path) -> None:
-    """show displays the contents of summary.md when it exists."""
-    ws_dir = _create_exploration(tmp_path, "2026-04-08_prime-numbers", "Prime Numbers")
-    (ws_dir / "summary.md").write_text("Primes are the building blocks of integers.")
-    with patch("mathlens.cli.knowledge._get_workspace_root", return_value=tmp_path):
-        result = runner.invoke(app, ["show", "Prime Numbers"])
-    assert result.exit_code == 0
-    assert "building blocks" in result.output
 
 
 def test_show_substring_match(tmp_path: Path) -> None:
