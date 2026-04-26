@@ -1,7 +1,8 @@
-"""mathlens knowledge — history, search, and show commands."""
+"""mathlens knowledge — history, search, show, and clean commands."""
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -139,3 +140,75 @@ def show(
         for artifact in sorted(artifacts, key=lambda p: p.name):
             size = artifact.stat().st_size
             console.print(f"  {artifact.name}  [dim]{size} bytes[/dim]")
+
+
+def _dir_size_mb(path: Path) -> float:
+    """Return total size of a directory in MB."""
+    total = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+    return total / (1024 * 1024)
+
+
+@app.command()
+def clean(
+    all_explorations: bool = typer.Option(False, "--all", help="Remove ALL explorations, not just failed/partial."),
+    keep: int = typer.Option(5, "--keep", "-k", help="When using --all, keep the N most recent."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be removed without deleting."),
+) -> None:
+    """Clean up old explorations and temporary files."""
+    ws_root = _get_workspace_root()
+    store = WorkspaceStore(ws_root)
+    explorations = store.list_explorations()
+
+    to_remove: list[tuple[str, Path, str]] = []
+
+    if all_explorations:
+        # Keep the N most recent, remove the rest
+        for meta in explorations[keep:]:
+            ws_dir = store.path_for(meta.slug)
+            to_remove.append((meta.slug, ws_dir, "old"))
+    else:
+        # Remove only failed/partial explorations
+        for meta in explorations:
+            if meta.status in (StageStatus.failed, StageStatus.running, StageStatus.pending):
+                ws_dir = store.path_for(meta.slug)
+                to_remove.append((meta.slug, ws_dir, meta.status.value))
+
+    # Always clean up stale .tmp files across all explorations
+    tmp_count = 0
+    for meta in explorations:
+        ws_dir = store.path_for(meta.slug)
+        for tmp in ws_dir.glob("**/*.tmp"):
+            if not dry_run:
+                tmp.unlink()
+            tmp_count += 1
+
+    # Clean partial movie files from completed explorations
+    partial_size = 0.0
+    for meta in explorations:
+        if meta.status == StageStatus.completed:
+            ws_dir = store.path_for(meta.slug)
+            for partial_dir in ws_dir.glob("**/partial_movie_files"):
+                if partial_dir.is_dir():
+                    partial_size += _dir_size_mb(partial_dir)
+                    if not dry_run:
+                        shutil.rmtree(partial_dir)
+
+    if not to_remove and tmp_count == 0 and partial_size == 0:
+        console.print("[dim]Nothing to clean.[/dim]")
+        return
+
+    prefix = "[dim](dry run)[/dim] " if dry_run else ""
+
+    if to_remove:
+        total_size = sum(_dir_size_mb(d) for _, d, _ in to_remove)
+        console.print(f"{prefix}Removing {len(to_remove)} exploration(s) ({total_size:.1f} MB):")
+        for slug, ws_dir, reason in to_remove:
+            console.print(f"  {slug} [dim]({reason})[/dim]")
+            if not dry_run:
+                shutil.rmtree(ws_dir, ignore_errors=True)
+
+    if partial_size > 0:
+        console.print(f"{prefix}Cleaned {partial_size:.1f} MB of partial movie files")
+
+    if tmp_count > 0:
+        console.print(f"{prefix}Removed {tmp_count} stale .tmp file(s)")
