@@ -116,6 +116,18 @@ def show(
         console.print("[bold]Summary[/bold]")
         console.print(summary_path.read_text())
 
+    # Show video if it exists
+    output_dir = ws_dir / "output"
+    video = None
+    if output_dir.is_dir():
+        for f in output_dir.glob("**/*.mp4"):
+            if "partial_movie_files" not in str(f):
+                video = f
+                break
+    if video:
+        console.print()
+        console.print(f"[green]Video:[/green] {video}")
+
     # List artifacts with file sizes
     artifacts = [
         p for p in ws_dir.iterdir()
