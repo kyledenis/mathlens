@@ -23,7 +23,7 @@ class CLIProviderSettings(BaseModel):
     backend: str = "claude-code"
     timeout: int = 300           # 5 min — generous but not infinite
     model: str = "sonnet"        # explicit model — doesn't touch user's Claude Code default
-    max_budget_usd: float = 0.50 # safety cap per call — prevents runaway token usage
+    max_budget_usd: float = 2.00 # safety cap per call — scene generation needs ~$1-1.50
 
 
 class APIProviderSettings(BaseModel):

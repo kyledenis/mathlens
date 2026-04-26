@@ -46,7 +46,7 @@ BACKEND_CAPABILITIES: dict[str, ProviderCapabilities] = {
 DEFAULT_CLI_MODEL = "sonnet"
 
 # Maximum spend per CLI call in USD — safety cap to prevent runaway usage.
-DEFAULT_MAX_BUDGET_USD = 0.50
+DEFAULT_MAX_BUDGET_USD = 2.00
 
 
 class CLISubprocessProvider:
