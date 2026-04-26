@@ -32,9 +32,10 @@ def run_explore(
 ) -> ExplorationResult:
     """Build pipeline and run, showing a live spinner for each stage."""
     orchestrator = build_pipeline(settings)
+    provider_name = settings.provider.default
     workspace_root = Path(settings.workspace.path).expanduser()
     tracker = DurationTracker(workspace_root / "duration_history.json")
-    progress = PipelineProgress(mode, tracker=tracker)
+    progress = PipelineProgress(mode, tracker=tracker, provider=provider_name)
     output_format: Optional[OutputFormat] = None
     if format_override is not None:
         output_format = OutputFormat(format_override)
@@ -62,7 +63,7 @@ def run_explore(
         elif event == "done":
             elapsed = time.monotonic() - stage_starts.get(stage, time.monotonic())
             console.print(progress.format_stage_done(stage, elapsed))
-            tracker.record(stage, mode, elapsed)
+            tracker.record(stage, mode, elapsed, provider=provider_name)
 
     async def _run() -> ExplorationResult:
         return await orchestrator.run(

@@ -19,15 +19,32 @@ STAGE_LABELS = {
 }
 
 # Fallback estimates when no historical data exists (seconds).
-_DEFAULT_ESTIMATES: dict[tuple[PipelineStage, PipelineMode], int] = {
-    (PipelineStage.planning, PipelineMode.explore): 20,
-    (PipelineStage.planning, PipelineMode.deep): 25,
-    (PipelineStage.verification, PipelineMode.explore): 0,
-    (PipelineStage.verification, PipelineMode.deep): 90,
-    (PipelineStage.visualization, PipelineMode.explore): 90,
-    (PipelineStage.visualization, PipelineMode.deep): 180,
-    (PipelineStage.summarization, PipelineMode.explore): 20,
-    (PipelineStage.summarization, PipelineMode.deep): 25,
+# Keyed by (stage, mode, provider). Provider "" is the final fallback.
+_DEFAULT_ESTIMATES: dict[tuple[PipelineStage, PipelineMode, str], int] = {
+    # API — direct Anthropic calls, fastest
+    (PipelineStage.planning, PipelineMode.explore, "api"): 15,
+    (PipelineStage.visualization, PipelineMode.explore, "api"): 45,
+    (PipelineStage.summarization, PipelineMode.explore, "api"): 12,
+    (PipelineStage.planning, PipelineMode.deep, "api"): 20,
+    (PipelineStage.verification, PipelineMode.deep, "api"): 60,
+    (PipelineStage.visualization, PipelineMode.deep, "api"): 90,
+    (PipelineStage.summarization, PipelineMode.deep, "api"): 15,
+    # CLI — claude -p, session bootstrap overhead
+    (PipelineStage.planning, PipelineMode.explore, "cli"): 25,
+    (PipelineStage.visualization, PipelineMode.explore, "cli"): 120,
+    (PipelineStage.summarization, PipelineMode.explore, "cli"): 20,
+    (PipelineStage.planning, PipelineMode.deep, "cli"): 30,
+    (PipelineStage.verification, PipelineMode.deep, "cli"): 120,
+    (PipelineStage.visualization, PipelineMode.deep, "cli"): 240,
+    (PipelineStage.summarization, PipelineMode.deep, "cli"): 25,
+    # Local — LM Studio / Ollama, depends heavily on hardware
+    (PipelineStage.planning, PipelineMode.explore, "local"): 40,
+    (PipelineStage.visualization, PipelineMode.explore, "local"): 180,
+    (PipelineStage.summarization, PipelineMode.explore, "local"): 30,
+    (PipelineStage.planning, PipelineMode.deep, "local"): 50,
+    (PipelineStage.verification, PipelineMode.deep, "local"): 180,
+    (PipelineStage.visualization, PipelineMode.deep, "local"): 300,
+    (PipelineStage.summarization, PipelineMode.deep, "local"): 40,
 }
 
 # How many recent durations to keep per (stage, mode) key.
@@ -61,14 +78,24 @@ class DurationTracker:
             logger.debug("Failed to save duration history to %s", self._path)
 
     @staticmethod
-    def _key(stage: PipelineStage, mode: PipelineMode) -> str:
-        return f"{stage.value}:{mode.value}"
+    def _key(stage: PipelineStage, mode: PipelineMode, provider: str = "") -> str:
+        parts = [stage.value, mode.value]
+        if provider:
+            parts.append(provider)
+        return ":".join(parts)
 
-    def record(self, stage: PipelineStage, mode: PipelineMode, duration: float) -> None:
-        """Record an actual duration for a stage."""
+    def record(
+        self, stage: PipelineStage, mode: PipelineMode, duration: float,
+        provider: str = "",
+    ) -> None:
+        """Record an actual duration for a stage.
+
+        *provider* should be the provider name (e.g. "cli", "api", "local")
+        so estimates are accurate when switching between providers.
+        """
         if duration <= 0:
             return
-        key = self._key(stage, mode)
+        key = self._key(stage, mode, provider)
         history = self._data.setdefault(key, [])
         history.append(round(duration, 1))
         # Keep only recent entries
@@ -76,8 +103,20 @@ class DurationTracker:
             self._data[key] = history[-_MAX_HISTORY:]
         self._save()
 
-    def average(self, stage: PipelineStage, mode: PipelineMode) -> float | None:
-        """Return the rolling average duration, or None if no data."""
+    def average(
+        self, stage: PipelineStage, mode: PipelineMode, provider: str = "",
+    ) -> float | None:
+        """Return the rolling average duration, or None if no data.
+
+        Tries provider-specific history first, falls back to
+        provider-agnostic history for backward compatibility.
+        """
+        if provider:
+            key = self._key(stage, mode, provider)
+            history = self._data.get(key, [])
+            if history:
+                return sum(history) / len(history)
+        # Fallback to provider-agnostic key
         key = self._key(stage, mode)
         history = self._data.get(key, [])
         if not history:
@@ -90,9 +129,11 @@ class PipelineProgress:
         self,
         mode: PipelineMode = PipelineMode.explore,
         tracker: DurationTracker | None = None,
+        provider: str = "",
     ) -> None:
         self._mode = mode
         self._tracker = tracker
+        self._provider = provider
 
     def label_for(self, stage: PipelineStage) -> str:
         return STAGE_LABELS[stage]
@@ -100,11 +141,12 @@ class PipelineProgress:
     def estimate_for(self, stage: PipelineStage) -> int:
         """Return the best estimate in seconds — historical average or fallback."""
         if self._tracker is not None:
-            avg = self._tracker.average(stage, self._mode)
+            avg = self._tracker.average(stage, self._mode, self._provider)
             if avg is not None:
                 # Add 10% buffer — better to overestimate
                 return int(avg * 1.1)
-        return _DEFAULT_ESTIMATES.get((stage, self._mode), 0)
+        # Provider-specific default, then 0 if unknown
+        return _DEFAULT_ESTIMATES.get((stage, self._mode, self._provider), 0)
 
     def format_stage_start(self, stage: PipelineStage) -> str:
         est = self.estimate_for(stage)
