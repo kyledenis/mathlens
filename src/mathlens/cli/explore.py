@@ -28,6 +28,7 @@ def run_explore(
     no_verify: bool = False,
     mode: PipelineMode = PipelineMode.explore,
     quiet: bool = False,
+    force: bool = False,
 ) -> ExplorationResult:
     """Build pipeline and run, showing a live spinner for each stage."""
     orchestrator = build_pipeline(settings)
@@ -43,6 +44,7 @@ def run_explore(
                 mode=mode,
                 output_format=output_format,
                 skip_verification=no_verify,
+                force=force,
             )
         )
 
@@ -65,6 +67,7 @@ def run_explore(
             mode=mode,
             output_format=output_format,
             skip_verification=no_verify,
+            force=force,
             on_stage=on_stage,
         )
 
@@ -107,7 +110,10 @@ def display_result(result: ExplorationResult) -> None:
             console.print(f"  • {insight}")
 
     # 6. Duration + usage
-    parts = [f"Completed in {format_duration(result.duration_seconds)}"]
+    if result.duration_seconds == 0.0:
+        parts = ["[cyan]Served from cache[/cyan]"]
+    else:
+        parts = [f"Completed in {format_duration(result.duration_seconds)}"]
     if result.usage.has_data:
         parts.append(
             f"{result.usage.input_tokens:,} in / {result.usage.output_tokens:,} out tokens"
@@ -190,7 +196,7 @@ def explore(
             no_open=no_open,
             quiet=quiet,
         )
-        result = run_explore(query, settings, format_override=format, no_verify=skip_verify, quiet=quiet)
+        result = run_explore(query, settings, format_override=format, no_verify=skip_verify, quiet=quiet, force=force)
         display_result(result)
         if settings.ui.open_video_on_complete and not no_open:
             _auto_open_output(result)

@@ -105,13 +105,23 @@ class Orchestrator:
         mode: PipelineMode,
         output_format: Optional[OutputFormat] = None,
         skip_verification: bool = False,
+        force: bool = False,
         on_stage: Callable[[PipelineStage, str], None] | None = None,
     ) -> ExplorationResult:
         """Run the full pipeline for *query* and return an ExplorationResult.
 
+        If *force* is False and a completed exploration for the same query
+        exists, returns the cached result immediately.
+
         *on_stage* is called with ``(stage, event)`` where *event* is
         ``"start"`` or ``"done"``.  The CLI uses this to drive a spinner.
         """
+
+        # Check cache first
+        if not force:
+            cached = self._try_cache(query)
+            if cached is not None:
+                return cached
 
         def _emit(stage: PipelineStage, event: str) -> None:
             if on_stage is not None:
@@ -214,6 +224,62 @@ class Orchestrator:
     # ------------------------------------------------------------------
     # Search index
     # ------------------------------------------------------------------
+
+    def _try_cache(self, query: str) -> ExplorationResult | None:
+        """Return a cached ExplorationResult if a completed exploration exists."""
+        for meta in self._store.list_explorations():
+            if meta.status != StageStatus.completed:
+                continue
+            # Match by topic — the query won't match exactly, but the topic slug
+            # from a previous plan might. Check if the query words appear in the topic.
+            query_words = set(query.lower().split())
+            topic_words = set(meta.topic.lower().replace("-", " ").split())
+            if query_words & topic_words and len(query_words & topic_words) >= 2:
+                try:
+                    return self._load_cached_result(meta)
+                except Exception:
+                    logger.debug("Failed to load cached result for %s", meta.slug)
+                    continue
+        return None
+
+    def _load_cached_result(self, meta: ExplorationMeta) -> ExplorationResult:
+        """Reconstruct an ExplorationResult from stored workspace files."""
+        import json
+        ws = self._store.path_for(meta.slug)
+
+        plan_data = json.loads((ws / "plan.json").read_text())
+        plan = ExplorationPlan.model_validate(plan_data)
+
+        verify_path = ws / "verification_result.json"
+        if verify_path.exists():
+            verification = VerificationResult.model_validate_json(verify_path.read_text())
+        else:
+            verification = VerificationResult(
+                status=VerificationStatus.skipped, lean_output="", duration_seconds=0.0,
+            )
+
+        viz_path = ws / "visualization_result.json"
+        visualization = None
+        if viz_path.exists():
+            visualization = VisualizationResult.model_validate_json(viz_path.read_text())
+
+        summary = None
+        summary_path = ws / "summary.md"
+        if summary_path.exists():
+            summary = Summary(
+                explanation=summary_path.read_text(),
+                key_insights=[],
+                path=summary_path,
+            )
+
+        return ExplorationResult(
+            plan=plan,
+            verification=verification,
+            visualization=visualization,
+            summary=summary,
+            meta=meta,
+            duration_seconds=0.0,
+        )
 
     def _index_result(self, meta: ExplorationMeta) -> None:
         if self._search_index is None:
