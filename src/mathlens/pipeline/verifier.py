@@ -11,7 +11,7 @@ from mathlens.models import PipelineMode, VerificationResult, VerificationStatus
 from mathlens.pipeline.response_cleaner import clean_code_response
 from mathlens.pipeline.validation import validate_lean
 from mathlens.workspace.atomic import atomic_write_text
-from mathlens.workspace.lean_project import LeanProject
+from mathlens.workspace.lean_project import LeanProject, LeanREPL
 from mathlens.providers.base import LLMProvider
 
 # ---------------------------------------------------------------------------
@@ -53,6 +53,7 @@ class Verifier:
         self._deep_timeout = deep_timeout
         self._last_reasoning: str = ""
         self._lean_project = LeanProject(self._workspace_dir / "lean-project")
+        self._repl = LeanREPL(project_dir=self._lean_project.path, idle_timeout=120)
 
     # ------------------------------------------------------------------
     # Public interface
@@ -142,7 +143,7 @@ class Verifier:
         timeout = self._timeout_for(mode)
 
         try:
-            returncode, stdout, stderr = await self._lean_project.check_proof(
+            returncode, stdout, stderr = await self._repl.check(
                 lean_code, timeout=timeout,
             )
         except TimeoutError:
@@ -181,6 +182,10 @@ class Verifier:
             mathlib_gaps=self._detect_mathlib_gaps(stderr),
             duration_seconds=duration,
         )
+
+    async def cleanup(self) -> None:
+        """Stop the Lean REPL. Called when the pipeline finishes."""
+        await self._repl.stop()
 
     # ------------------------------------------------------------------
     # Internal helpers

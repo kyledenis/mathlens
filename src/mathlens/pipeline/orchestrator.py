@@ -132,94 +132,97 @@ class Orchestrator:
 
         start = monotonic()
 
-        # ------------------------------------------------------------------
-        # Stage 1: Planning
-        # ------------------------------------------------------------------
-        _emit(PipelineStage.planning, "start")
-        plan = await self._planner.plan(
-            query, output_format, deep=(mode == PipelineMode.deep),
-        )
-        meta = self._store.create(plan, mode)
-        self._store.complete_stage(plan.slug, PipelineStage.planning)
-        self._store.set_status(plan.slug, StageStatus.running)
-        _emit(PipelineStage.planning, "done")
-
-        workspace_dir = self._store.path_for(plan.slug)
-
-        # ------------------------------------------------------------------
-        # Deep mode: run verification and visualization in parallel
-        # ------------------------------------------------------------------
-        if mode == PipelineMode.deep and not skip_verification:
-            verification, visualization = await self._run_parallel(
-                plan, meta, mode, workspace_dir, _emit,
+        try:
+            # ------------------------------------------------------------------
+            # Stage 1: Planning
+            # ------------------------------------------------------------------
+            _emit(PipelineStage.planning, "start")
+            plan = await self._planner.plan(
+                query, output_format, deep=(mode == PipelineMode.deep),
             )
-        else:
-            # Explore mode (or explicit --no-verify): sequential
-            if skip_verification:
-                verification = VerificationResult(
-                    status=VerificationStatus.skipped,
-                    lean_output="",
-                    failure_reason="Verification skipped",
-                    duration_seconds=0.0,
+            meta = self._store.create(plan, mode)
+            self._store.complete_stage(plan.slug, PipelineStage.planning)
+            self._store.set_status(plan.slug, StageStatus.running)
+            _emit(PipelineStage.planning, "done")
+
+            workspace_dir = self._store.path_for(plan.slug)
+
+            # ------------------------------------------------------------------
+            # Deep mode: run verification and visualization in parallel
+            # ------------------------------------------------------------------
+            if mode == PipelineMode.deep and not skip_verification:
+                verification, visualization = await self._run_parallel(
+                    plan, meta, mode, workspace_dir, _emit,
                 )
             else:
-                _emit(PipelineStage.verification, "start")
-                verification = await self._run_verification(plan, mode, workspace_dir)
-                self._store.save_stage_result(plan.slug, PipelineStage.verification, verification)
-                self._store.complete_stage(plan.slug, PipelineStage.verification)
-                _emit(PipelineStage.verification, "done")
+                # Explore mode (or explicit --no-verify): sequential
+                if skip_verification:
+                    verification = VerificationResult(
+                        status=VerificationStatus.skipped,
+                        lean_output="",
+                        failure_reason="Verification skipped",
+                        duration_seconds=0.0,
+                    )
+                else:
+                    _emit(PipelineStage.verification, "start")
+                    verification = await self._run_verification(plan, mode, workspace_dir)
+                    self._store.save_stage_result(plan.slug, PipelineStage.verification, verification)
+                    self._store.complete_stage(plan.slug, PipelineStage.verification)
+                    _emit(PipelineStage.verification, "done")
 
-            # CRITICAL INVARIANT: REFUTED → halt immediately
-            if verification.should_halt:
-                self._store.set_status(plan.slug, StageStatus.completed)
-                self._index_result(meta)
-                return ExplorationResult(
-                    plan=plan,
-                    verification=verification,
-                    visualization=None,
-                    summary=None,
-                    meta=meta,
-                    duration_seconds=monotonic() - start,
-                )
+                # CRITICAL INVARIANT: REFUTED → halt immediately
+                if verification.should_halt:
+                    self._store.set_status(plan.slug, StageStatus.completed)
+                    self._index_result(meta)
+                    return ExplorationResult(
+                        plan=plan,
+                        verification=verification,
+                        visualization=None,
+                        summary=None,
+                        meta=meta,
+                        duration_seconds=monotonic() - start,
+                    )
 
-            # Stage 3: Visualization
-            _emit(PipelineStage.visualization, "start")
-            visualization = await self._run_visualization(plan, meta, mode, verification)
-            self._store.save_stage_result(plan.slug, PipelineStage.visualization, visualization)
-            self._store.complete_stage(plan.slug, PipelineStage.visualization)
-            _emit(PipelineStage.visualization, "done")
+                # Stage 3: Visualization
+                _emit(PipelineStage.visualization, "start")
+                visualization = await self._run_visualization(plan, meta, mode, verification)
+                self._store.save_stage_result(plan.slug, PipelineStage.visualization, visualization)
+                self._store.complete_stage(plan.slug, PipelineStage.visualization)
+                _emit(PipelineStage.visualization, "done")
 
-        # ------------------------------------------------------------------
-        # Stage 4: Summarization
-        # ------------------------------------------------------------------
-        _emit(PipelineStage.summarization, "start")
+            # ------------------------------------------------------------------
+            # Stage 4: Summarization
+            # ------------------------------------------------------------------
+            _emit(PipelineStage.summarization, "start")
 
-        # Collect reasoning from upstream stages for richer summaries
-        reasoning_parts: list[str] = []
-        for stage in (self._verifier, self._visualizer):
-            val = getattr(stage, "_last_reasoning", None)
-            if isinstance(val, str) and val:
-                reasoning_parts.append(val)
-        reasoning_context = "\n\n".join(reasoning_parts) if reasoning_parts else None
+            # Collect reasoning from upstream stages for richer summaries
+            reasoning_parts: list[str] = []
+            for stage in (self._verifier, self._visualizer):
+                val = getattr(stage, "_last_reasoning", None)
+                if isinstance(val, str) and val:
+                    reasoning_parts.append(val)
+            reasoning_context = "\n\n".join(reasoning_parts) if reasoning_parts else None
 
-        summary = await self._run_summarization(
-            plan, verification, workspace_dir,
-            reasoning_context=reasoning_context,
-            deep=(mode == PipelineMode.deep),
-        )
-        self._store.complete_stage(plan.slug, PipelineStage.summarization)
-        _emit(PipelineStage.summarization, "done")
-        self._store.set_status(plan.slug, StageStatus.completed)
-        self._index_result(meta)
+            summary = await self._run_summarization(
+                plan, verification, workspace_dir,
+                reasoning_context=reasoning_context,
+                deep=(mode == PipelineMode.deep),
+            )
+            self._store.complete_stage(plan.slug, PipelineStage.summarization)
+            _emit(PipelineStage.summarization, "done")
+            self._store.set_status(plan.slug, StageStatus.completed)
+            self._index_result(meta)
 
-        return ExplorationResult(
-            plan=plan,
-            verification=verification,
-            visualization=visualization,
-            summary=summary,
-            meta=meta,
-            duration_seconds=monotonic() - start,
-        )
+            return ExplorationResult(
+                plan=plan,
+                verification=verification,
+                visualization=visualization,
+                summary=summary,
+                meta=meta,
+                duration_seconds=monotonic() - start,
+            )
+        finally:
+            await self._verifier.cleanup()
 
     # ------------------------------------------------------------------
     # Search index

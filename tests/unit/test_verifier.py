@@ -45,13 +45,13 @@ def _patch_ready_verifier(verifier):
 
 
 def _patch_check_proof(verifier, return_value=None, side_effect=None):
-    """Context manager that mocks LeanProject.check_proof."""
+    """Context manager that mocks the REPL's check method."""
     kwargs = {}
     if return_value is not None:
         kwargs["return_value"] = return_value
     if side_effect is not None:
         kwargs["side_effect"] = side_effect
-    return patch.object(verifier._lean_project, "check_proof", new=AsyncMock(**kwargs))
+    return patch.object(verifier._repl, "check", new=AsyncMock(**kwargs))
 
 
 # ---------------------------------------------------------------------------

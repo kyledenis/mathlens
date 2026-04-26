@@ -226,3 +226,80 @@ class LeanProject:
         if proc.returncode != 0:
             return False, output
         return True, output
+
+
+# ---------------------------------------------------------------------------
+# LeanREPL
+# ---------------------------------------------------------------------------
+
+
+class LeanREPL:
+    """Managed Lean proof checker with lifecycle cleanup.
+
+    Currently delegates to one-shot ``lake env lean`` calls.
+    The abstraction exists so a true persistent REPL can be
+    added later without changing the verifier interface.
+    """
+
+    def __init__(self, project_dir: Path, idle_timeout: int = 120) -> None:
+        self._project_dir = project_dir
+        self._idle_timeout = idle_timeout
+        self._proc: asyncio.subprocess.Process | None = None
+        self._lock = asyncio.Lock()
+
+    @property
+    def is_running(self) -> bool:
+        return self._proc is not None and self._proc.returncode is None
+
+    async def check(
+        self, lean_code: str, timeout: int = 60
+    ) -> tuple[int, str, str]:
+        """Typecheck *lean_code* and return (returncode, stdout, stderr)."""
+        async with self._lock:
+            return await self._run_oneshot(lean_code, timeout)
+
+    async def _run_oneshot(
+        self, lean_code: str, timeout: int
+    ) -> tuple[int, str, str]:
+        """Run a one-shot ``lake env lean`` on the code."""
+        proof_path = self._project_dir / "Proof.lean"
+        atomic_write_text(proof_path, lean_code)
+
+        cmd = ["lake", "env", "lean", str(proof_path)]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(self._project_dir),
+        )
+        register_process(proc)
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            unregister_process(proc)
+            raise TimeoutError(f"Lean timed out after {timeout}s")
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            proc.kill()
+            await proc.wait()
+            unregister_process(proc)
+            raise
+        else:
+            unregister_process(proc)
+
+        return (
+            proc.returncode if proc.returncode is not None else 1,
+            stdout_bytes.decode(errors="replace"),
+            stderr_bytes.decode(errors="replace"),
+        )
+
+    async def stop(self) -> None:
+        """Kill any running process. Called when the pipeline finishes."""
+        if self._proc is not None and self._proc.returncode is None:
+            self._proc.kill()
+            await self._proc.wait()
+            unregister_process(self._proc)
+        self._proc = None
