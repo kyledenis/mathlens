@@ -128,6 +128,11 @@ class ScenePlan(BaseModel):
     description: str
     key_objects: list[str] = Field(default_factory=list)
     animation_hints: list[str] = Field(default_factory=list)
+    steps: list[str] = Field(default_factory=list)
+    """Ordered shot list — each step becomes one animation or group.
+    E.g. ["Title: 'Can any signal be built from sine waves?'",
+          "Draw axes (Time vs Amplitude), label both",
+          "Plot sin(t) in blue, caption: 'A pure frequency'"]"""
 
 
 class ExplorationPlan(BaseModel):

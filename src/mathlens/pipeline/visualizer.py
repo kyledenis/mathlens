@@ -34,34 +34,22 @@ from mathlens.providers.base import LLMProvider
 
 SCENE_GEN_SYSTEM = """\
 Write Manim CE Python code. Output ONLY valid Python — nothing else.
-Start with `from manim import *`. One Scene subclass. Under 100 lines.
+Start with `from manim import *`. One Scene subclass.
 
-Structure the scene as a mini-lesson in 5 acts:
+You will be given a numbered shot list. Implement each step as one \
+self.play() call (or small group). Do NOT add extra animations beyond \
+the shot list — it defines the exact scope of the video.
 
-ACT 1 — HOOK (5s): Show a thought-provoking question as Text at center. \
-self.wait(2), FadeOut.
+For each step, add a caption (Text, font_size=24, .to_edge(DOWN)) \
+that explains what the viewer is seeing and why it matters.
 
-ACT 2 — PREREQUISITES (10-15s): Briefly introduce any concept the viewer \
-needs. E.g. if the topic uses complex numbers, show the complex plane and \
-explain what i means. Use simple visuals + a caption at .to_edge(DOWN).
-
-ACT 3 — BUILD INTUITION (20-30s): The core visual explanation. Show the \
-geometry, the movement, the transformation. Let the viewer SEE the answer \
-before any equations. Animate slowly (run_time=3+). Use color consistently: \
-BLUE for real parts, YELLOW for key objects, RED for results.
-
-ACT 4 — FORMALIZE (10s): Now show the equation that captures what we just \
-saw. Use MathTex. The equation should feel like confirmation, not revelation.
-
-ACT 5 — CONCLUSION (5s): FadeOut everything. Show the final key result \
-centered, highlighted with SurroundingRectangle. self.wait(2).
-
-Layout rules (CRITICAL — prevents text overlap):
-- Only ONE caption (Text, font_size=24, .to_edge(DOWN)) visible at a time
-- ALWAYS FadeOut the previous caption before showing the next
+Quality rules:
+- One caption at a time — FadeOut the previous before showing the next
+- FadeOut all objects between major sections to prevent clutter
+- Label all axes with Text(font_size=18)
 - Labels on shapes: font_size=20, buff=0.3
-- Before each new act, FadeOut ALL objects from the previous act
-- Use self.wait(1) between steps\
+- self.wait(1) between steps, self.wait(2) after key moments
+- Use colour with meaning: BLUE primary, YELLOW highlights, RED results\
 """
 
 QUALITY_MAP: dict[PipelineMode, RenderQuality] = {
@@ -124,14 +112,24 @@ class Visualizer:
         target_dir = workspace_dir or self._workspace_dir
         self._last_reasoning = ""
 
-        # Build a focused teaching prompt from the scene plan
+        # Build prompt from the scene plan's shot list
         scene = scenes[0] if scenes else ScenePlan(
             title="Overview", description=f"Visual overview of {topic}",
         )
-        prompt = (
-            f"Write a Manim scene about: {topic}\n"
-            f"Focus: {scene.title} — {scene.description}"
-        )
+
+        if scene.steps:
+            step_list = "\n".join(f"{i+1}. {s}" for i, s in enumerate(scene.steps))
+            prompt = (
+                f"Topic: {topic}\n\n"
+                f"Implement this shot list as Manim code — one animation per step:\n"
+                f"{step_list}"
+            )
+        else:
+            # Fallback for plans without steps (backward compat)
+            prompt = (
+                f"Write a Manim scene about: {topic}\n"
+                f"Focus: {scene.title} — {scene.description}"
+            )
         code = await self._generate_single_scene(prompt)
 
         scene_path = target_dir / "scene_01.py"
