@@ -19,12 +19,24 @@ from mathlens.providers.base import LLMResponse
 LEAN_STUB = "import Mathlib\n\ntheorem trivial : True := trivial\n"
 
 
-def make_provider(content: str = LEAN_STUB) -> AsyncMock:
-    """Return a mock LLMProvider whose complete() returns *content*."""
+def make_provider(content: str = LEAN_STUB, responses: list[str] | None = None) -> AsyncMock:
+    """Return a mock LLMProvider whose complete() returns *content*.
+
+    If *responses* is given, each call returns the next response in order
+    (cycling the last one if more calls are made than responses provided).
+    """
     provider = AsyncMock()
-    provider.complete = AsyncMock(
-        return_value=LLMResponse(content=content, model="mock", usage={})
-    )
+    if responses is not None:
+        provider.complete = AsyncMock(
+            side_effect=[
+                LLMResponse(content=r, model="mock", usage={})
+                for r in responses
+            ]
+        )
+    else:
+        provider.complete = AsyncMock(
+            return_value=LLMResponse(content=content, model="mock", usage={})
+        )
     return provider
 
 
@@ -74,7 +86,9 @@ async def test_verify_success(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_verify_lean_rejects(tmp_path: Path) -> None:
-    verifier = make_verifier(tmp_path)
+    # Explore mode: 1 initial + 1 retry = 2 LLM calls, both compilations fail
+    provider = make_provider(responses=[LEAN_STUB, LEAN_STUB])
+    verifier = make_verifier(tmp_path, provider=provider)
     stderr = "type mismatch\nexpected type 'Nat'\ngot 'String'"
     with patch("shutil.which", return_value="/usr/bin/lean"), \
          _patch_ready_verifier(verifier), \

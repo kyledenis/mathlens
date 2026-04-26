@@ -9,7 +9,6 @@ from typing import Optional
 
 from mathlens.models import PipelineMode, VerificationResult, VerificationStatus
 from mathlens.pipeline.response_cleaner import clean_code_response
-from mathlens.pipeline.validation import validate_lean
 from mathlens.workspace.atomic import atomic_write_text
 from mathlens.workspace.lean_project import LeanProject, LeanREPL
 from mathlens.providers.base import LLMProvider
@@ -103,73 +102,62 @@ class Verifier:
                 duration_seconds=0.0,
             )
 
-        # Ask the LLM to produce Lean 4 source.
+        # Initial LLM call to generate Lean source
         prompt = "\n\n".join(statements)
-        response = await self._provider.complete(
-            prompt=prompt,
-            system=FORMALIZE_SYSTEM,
-            temperature=0.0,
-        )
-        cleaned = clean_code_response(response.content, "lean")
-        lean_code = cleaned.code
-        self._last_reasoning = cleaned.reasoning
+        lean_code = await self._generate_lean(prompt)
 
-        # Validate — retry once if the output looks like prose, not code.
-        valid, error = validate_lean(lean_code)
-        if not valid:
-            retry_prompt = (
-                f"Your previous response was not valid Lean 4 code.\n"
-                f"Error: {error}\n\n"
-                f"Please respond with ONLY valid Lean 4 source code. "
-                f"No prose, no markdown fences, no explanations.\n\n"
-                f"{prompt}"
-            )
-            response = await self._provider.complete(
-                prompt=retry_prompt,
-                system=FORMALIZE_SYSTEM,
-                temperature=0.0,
-            )
-            cleaned = clean_code_response(response.content, "lean")
-            lean_code = cleaned.code
-            if cleaned.reasoning:
-                self._last_reasoning += "\n\n" + cleaned.reasoning
-
-        # Save proof to the exploration workspace for archival
+        # Save proof for archival
         proof_path = target_dir / "proof.lean"
         target_dir.mkdir(parents=True, exist_ok=True)
         atomic_write_text(proof_path, lean_code)
 
-        # Typecheck via the shared Lake project (has Mathlib available)
+        # Iterative compile-fix loop
         timeout = self._timeout_for(mode)
+        max_retries = 3 if mode == PipelineMode.deep else 1
+        last_lean_output = ""
 
-        try:
-            returncode, stdout, stderr = await self._repl.check(
-                lean_code, timeout=timeout,
-            )
-        except TimeoutError:
-            duration = time.monotonic() - start
-            return VerificationResult(
-                status=VerificationStatus.unverifiable,
-                proof_path=proof_path,
-                lean_output="",
-                failure_reason=f"Proof timeout after {timeout}s",
-                duration_seconds=duration,
-            )
+        for attempt in range(max_retries + 1):
+            try:
+                returncode, stdout, stderr = await self._repl.check(
+                    lean_code, timeout=timeout,
+                )
+            except TimeoutError:
+                duration = time.monotonic() - start
+                return VerificationResult(
+                    status=VerificationStatus.unverifiable,
+                    proof_path=proof_path,
+                    lean_output=last_lean_output,
+                    failure_reason=f"Proof timeout after {timeout}s",
+                    duration_seconds=duration,
+                )
 
+            last_lean_output = stdout + stderr
+
+            if returncode == 0:
+                duration = time.monotonic() - start
+                return VerificationResult(
+                    status=VerificationStatus.verified,
+                    proof_path=proof_path,
+                    lean_output=last_lean_output,
+                    duration_seconds=duration,
+                )
+
+            # If we have retries left, feed the error back to the LLM
+            if attempt < max_retries:
+                diagnostics = self._parse_lean_diagnostics(stderr)
+                repair_prompt = (
+                    f"The following Lean 4 proof failed to compile.\n\n"
+                    f"Code:\n```lean\n{lean_code}\n```\n\n"
+                    f"Errors:\n{diagnostics}\n\n"
+                    f"Fix the proof. Respond with ONLY the corrected Lean 4 source."
+                )
+                lean_code = await self._generate_lean(repair_prompt)
+                atomic_write_text(proof_path, lean_code)
+
+        # Exhausted retries — classify the final error
         duration = time.monotonic() - start
-        lean_output = stdout + stderr
-
-        if returncode == 0:
-            return VerificationResult(
-                status=VerificationStatus.verified,
-                proof_path=proof_path,
-                lean_output=lean_output,
-                duration_seconds=duration,
-            )
-
-        # Non-zero return — decide between REFUTED and UNVERIFIABLE.
         refute_markers = ("type mismatch", "failed to synthesize", "unknown identifier")
-        if any(marker in stderr for marker in refute_markers):
+        if any(marker in last_lean_output for marker in refute_markers):
             status = VerificationStatus.refuted
         else:
             status = VerificationStatus.unverifiable
@@ -177,9 +165,9 @@ class Verifier:
         return VerificationResult(
             status=status,
             proof_path=proof_path,
-            lean_output=lean_output,
-            failure_reason=self._extract_failure_reason(stderr),
-            mathlib_gaps=self._detect_mathlib_gaps(stderr),
+            lean_output=last_lean_output,
+            failure_reason=self._extract_failure_reason(last_lean_output),
+            mathlib_gaps=self._detect_mathlib_gaps(last_lean_output),
             duration_seconds=duration,
         )
 
@@ -190,6 +178,44 @@ class Verifier:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _generate_lean(self, prompt: str) -> str:
+        """Generate Lean code from the LLM, clean it, and validate basics."""
+        response = await self._provider.complete(
+            prompt=prompt,
+            system=FORMALIZE_SYSTEM,
+            temperature=0.0,
+        )
+        cleaned = clean_code_response(response.content, "lean")
+        if cleaned.reasoning:
+            self._last_reasoning += (
+                ("\n\n" + cleaned.reasoning) if self._last_reasoning else cleaned.reasoning
+            )
+        return cleaned.code
+
+    @staticmethod
+    def _parse_lean_diagnostics(stderr: str) -> str:
+        """Extract structured error diagnostics from Lean stderr.
+
+        Returns a formatted string suitable for feeding back to the LLM.
+        Lean errors look like: file.lean:3:0: error: type mismatch
+        """
+        diagnostics: list[str] = []
+        for line in stderr.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if ": error:" in stripped or ": warning:" in stripped:
+                # Strip file path prefix, keep line:col: level: message
+                parts = stripped.split(":", 3)
+                if len(parts) >= 4:
+                    diagnostics.append(f"Line {parts[1]}: {parts[3].strip()}")
+                else:
+                    diagnostics.append(stripped)
+            elif diagnostics:
+                # Continuation line of a previous diagnostic
+                diagnostics.append(f"  {stripped}")
+        return "\n".join(diagnostics) if diagnostics else stderr[:500]
 
     @staticmethod
     def _extract_lean_code(content: str) -> str:
