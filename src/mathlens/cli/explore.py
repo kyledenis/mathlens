@@ -94,9 +94,12 @@ def display_result(result: ExplorationResult) -> None:
         console.print(format_refuted_error(reason, result.verification.lean_output))
         return
 
-    # 4. Visualization output path
-    if result.visualization is not None:
-        console.print(f"[cyan]Output:[/cyan] {result.visualization.output_path}")
+    # 4. Visualization output
+    video_path = _find_rendered_video(result)
+    if video_path:
+        console.print(f"[green]Video:[/green] {video_path}")
+    elif result.visualization is not None:
+        console.print(f"[yellow]Render failed:[/yellow] no video produced")
 
     # 5. Key insights from summary
     if result.summary is not None:
@@ -107,24 +110,31 @@ def display_result(result: ExplorationResult) -> None:
     console.print(f"[dim]Completed in {format_duration(result.duration_seconds)}[/dim]")
 
 
+def _find_rendered_video(result: ExplorationResult) -> Path | None:
+    """Find the final rendered video, excluding Manim's partial movie files."""
+    if result.visualization is None:
+        return None
+    output_dir = result.visualization.output_path
+    if not output_dir.is_dir():
+        return None
+    # Manim writes final videos to videos/{scene}/{quality}/{ClassName}.mp4
+    # Partial files are in videos/{scene}/{quality}/partial_movie_files/
+    for ext in ("*.mp4", "*.gif", "*.png"):
+        for f in output_dir.glob(f"**/{ext}"):
+            if "partial_movie_files" not in str(f):
+                return f
+    return None
+
+
 def _auto_open_output(result: ExplorationResult) -> None:
-    """Open the rendered visualization output, if any."""
+    """Open the rendered video, if any."""
     import platform
     import subprocess as _sp
 
-    if result.visualization is None:
+    video = _find_rendered_video(result)
+    if video is None:
         return
-    output_dir = result.visualization.output_path
-    if not output_dir.is_dir():
-        return
-    files = (
-        list(output_dir.glob("**/*.mp4"))
-        + list(output_dir.glob("**/*.gif"))
-        + list(output_dir.glob("**/*.png"))
-    )
-    if not files:
-        return
-    target = str(files[0])
+    target = str(video)
     system = platform.system()
     if system == "Darwin":
         _sp.run(["open", target], check=False)
