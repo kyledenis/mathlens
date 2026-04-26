@@ -16,7 +16,7 @@ from mathlens.models import Badge, OutputFormat, PipelineMode, PipelineStage
 from mathlens.pipeline.orchestrator import ExplorationResult, TokenUsage
 from mathlens.ui.console import console, format_badge, format_duration, format_topic_header
 from mathlens.ui.errors import format_error, format_refuted_error
-from mathlens.ui.progress import PipelineProgress
+from mathlens.ui.progress import DurationTracker, PipelineProgress
 
 _CONFIG_PATH = Path.home() / ".config" / "mathlens" / "config.toml"
 
@@ -32,7 +32,9 @@ def run_explore(
 ) -> ExplorationResult:
     """Build pipeline and run, showing a live spinner for each stage."""
     orchestrator = build_pipeline(settings)
-    progress = PipelineProgress(mode)
+    workspace_root = Path(settings.workspace.path).expanduser()
+    tracker = DurationTracker(workspace_root / "duration_history.json")
+    progress = PipelineProgress(mode, tracker=tracker)
     output_format: Optional[OutputFormat] = None
     if format_override is not None:
         output_format = OutputFormat(format_override)
@@ -60,6 +62,7 @@ def run_explore(
         elif event == "done":
             elapsed = time.monotonic() - stage_starts.get(stage, time.monotonic())
             console.print(progress.format_stage_done(stage, elapsed))
+            tracker.record(stage, mode, elapsed)
 
     async def _run() -> ExplorationResult:
         return await orchestrator.run(
