@@ -33,7 +33,7 @@ def run_deep(
     )
 
 
-@app.command()
+@app.command(rich_help_panel="Explore")
 def deep(
     query: str = typer.Argument(..., help="Math topic or question to explore in depth."),
     provider: Optional[str] = typer.Option(None, "--provider", "-p", help="LLM provider: api, cli, or local."),

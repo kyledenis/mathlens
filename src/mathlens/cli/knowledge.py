@@ -23,7 +23,7 @@ def _get_workspace_root() -> Path:
     return Path(settings.workspace.path).expanduser()
 
 
-@app.command()
+@app.command(rich_help_panel="Browse")
 def history(
     limit: int = typer.Option(20, "--limit", "-n", help="Maximum number of explorations to show."),
 ) -> None:
@@ -50,7 +50,7 @@ def history(
     console.print(panel)
 
 
-@app.command()
+@app.command(rich_help_panel="Browse")
 def search(
     query: str = typer.Argument(..., help="Search query."),
 ) -> None:
@@ -80,7 +80,7 @@ def search(
     console.print(panel)
 
 
-@app.command()
+@app.command(rich_help_panel="Browse")
 def show(
     topic: str = typer.Argument(..., help="Topic name or slug to display."),
 ) -> None:
@@ -148,7 +148,7 @@ def _dir_size_mb(path: Path) -> float:
     return total / (1024 * 1024)
 
 
-@app.command()
+@app.command(rich_help_panel="Manage")
 def clean(
     all_explorations: bool = typer.Option(False, "--all", help="Remove ALL explorations, not just failed/partial."),
     keep: int = typer.Option(5, "--keep", "-k", help="When using --all, keep the N most recent."),

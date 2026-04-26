@@ -155,21 +155,19 @@ class Orchestrator:
             )
         else:
             # Explore mode (or explicit --no-verify): sequential
-            # Stage 2: Verification
-            _emit(PipelineStage.verification, "start")
             if skip_verification:
                 verification = VerificationResult(
                     status=VerificationStatus.skipped,
                     lean_output="",
-                    failure_reason="Verification skipped by caller",
+                    failure_reason="Verification skipped",
                     duration_seconds=0.0,
                 )
             else:
+                _emit(PipelineStage.verification, "start")
                 verification = await self._run_verification(plan, mode, workspace_dir)
-
-            self._store.save_stage_result(plan.slug, PipelineStage.verification, verification)
-            self._store.complete_stage(plan.slug, PipelineStage.verification)
-            _emit(PipelineStage.verification, "done")
+                self._store.save_stage_result(plan.slug, PipelineStage.verification, verification)
+                self._store.complete_stage(plan.slug, PipelineStage.verification)
+                _emit(PipelineStage.verification, "done")
 
             # CRITICAL INVARIANT: REFUTED → halt immediately
             if verification.should_halt:
@@ -205,7 +203,9 @@ class Orchestrator:
         reasoning_context = "\n\n".join(reasoning_parts) if reasoning_parts else None
 
         summary = await self._run_summarization(
-            plan, verification, workspace_dir, reasoning_context=reasoning_context,
+            plan, verification, workspace_dir,
+            reasoning_context=reasoning_context,
+            deep=(mode == PipelineMode.deep),
         )
         self._store.complete_stage(plan.slug, PipelineStage.summarization)
         _emit(PipelineStage.summarization, "done")
@@ -389,6 +389,7 @@ class Orchestrator:
         verification: VerificationResult,
         workspace_dir: Path,
         reasoning_context: str | None = None,
+        deep: bool = False,
     ) -> Summary:
         """Summarize the exploration; return a fallback Summary on any exception."""
         try:
@@ -396,6 +397,7 @@ class Orchestrator:
                 plan, verification,
                 workspace_dir=workspace_dir,
                 reasoning_context=reasoning_context,
+                deep=deep,
             )
         except Exception:
             return Summary(

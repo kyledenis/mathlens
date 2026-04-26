@@ -55,7 +55,7 @@ def run_viz(
 # ---------------------------------------------------------------------------
 
 
-@app.command()
+@app.command(rich_help_panel="Explore")
 def prove(
     statement: str = typer.Argument(..., help="Mathematical statement to verify."),
     provider: Optional[str] = typer.Option(None, "--provider", "-p", help="LLM provider: api, cli, or local."),
@@ -100,7 +100,7 @@ def _run_viz_command(
         raise typer.Exit(code=1)
 
 
-@app.command()
+@app.command(rich_help_panel="Explore")
 def vis(
     description: str = typer.Argument(..., help="Math description to visualize."),
     provider: Optional[str] = typer.Option(None, "--provider", "-p", help="LLM provider: api, cli, or local."),
@@ -111,7 +111,7 @@ def vis(
     _run_viz_command(description, provider, format, local)
 
 
-@app.command(name="viz", hidden=True)
+@app.command(name="viz", hidden=True, rich_help_panel="Explore")
 def viz(
     description: str = typer.Argument(..., help="Math description to visualize."),
     provider: Optional[str] = typer.Option(None, "--provider", "-p"),
@@ -127,7 +127,7 @@ def viz(
 # ---------------------------------------------------------------------------
 
 
-@app.command()
+@app.command(rich_help_panel="Explore")
 def summarize(
     workspace_path: str = typer.Argument(..., help="Path to an existing workspace to summarize."),
 ) -> None:

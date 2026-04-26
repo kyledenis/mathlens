@@ -227,7 +227,7 @@ def _install_hint(component: str) -> _InstallCmd | None:
 # Doctor command
 # ---------------------------------------------------------------------------
 
-@app.command()
+@app.command(rich_help_panel="Manage")
 def doctor(
     fix: bool = typer.Option(False, "--fix", help="Repair workspace issues (stale locks, tmp files)."),
     install: bool = typer.Option(False, "--install", help="Attempt to install missing dependencies."),

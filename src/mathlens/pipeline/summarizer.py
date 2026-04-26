@@ -12,16 +12,36 @@ from mathlens.workspace.atomic import atomic_write_text
 from mathlens.providers.base import LLMProvider
 
 
-SUMMARY_SYSTEM = """\
-You are a mathematics education summarizer. Given information about a mathematical topic
-and its verification status, produce a JSON summary with the following fields:
+SUMMARY_SYSTEM_EXPLORE = """\
+Summarize this math topic for someone who is curious but NOT an expert. \
+Assume they know basic algebra and geometry but nothing advanced.
 
-- explanation (str): a clear, accessible explanation of the topic and its key result
-- key_insights (list[str]): the most important insights or proof ideas
-- prerequisites (list[str]): prerequisite topic slugs the reader should know
-- further_reading (list[str]): related topic slugs for further exploration
+Rules:
+- Explain like a great teacher, not a textbook. Use analogies and plain language.
+- If a concept requires prior knowledge, briefly explain that concept first.
+- Never use jargon without defining it in the same sentence.
+- key_insights should each be one clear sentence a non-expert can understand.
 
-Respond with only valid JSON. Do not include any explanation or markdown fences.\
+Produce JSON with:
+- explanation (str): 2-3 sentence plain-language explanation
+- key_insights (list[str]): 3-5 accessible insights
+- prerequisites (list[str]): topic slugs
+- further_reading (list[str]): topic slugs
+
+Respond with only valid JSON.\
+"""
+
+SUMMARY_SYSTEM_DEEP = """\
+Summarize this math topic with mathematical rigor. The reader has undergraduate-level \
+math knowledge.
+
+Produce JSON with:
+- explanation (str): precise mathematical explanation with key definitions
+- key_insights (list[str]): 4-6 insights including proof techniques and connections
+- prerequisites (list[str]): topic slugs
+- further_reading (list[str]): topic slugs
+
+Respond with only valid JSON.\
 """
 
 
@@ -38,9 +58,11 @@ class Summarizer:
         verification: VerificationResult,
         workspace_dir: Optional[Path] = None,
         reasoning_context: Optional[str] = None,
+        deep: bool = False,
     ) -> Summary:
         """Build a summary from the plan and verification result."""
         target_dir = workspace_dir or self._workspace_dir
+        system = SUMMARY_SYSTEM_DEEP if deep else SUMMARY_SYSTEM_EXPLORE
         verification_context = self._build_verification_context(verification)
         prompt = self._build_prompt(plan, verification_context)
         if reasoning_context:
@@ -51,7 +73,7 @@ class Summarizer:
 
         response = await self._provider.complete(
             prompt,
-            system=SUMMARY_SYSTEM,
+            system=system,
             temperature=0.3,
             response_format="json",
         )

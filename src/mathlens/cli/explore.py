@@ -12,7 +12,7 @@ from mathlens.cli.app import app
 from mathlens.cli.common import apply_flag_overrides, build_pipeline
 from mathlens.config.settings import MathLensSettings
 from mathlens.lifecycle import cleanup, install_signal_handlers
-from mathlens.models import Badge, OutputFormat, PipelineMode, PipelineStage
+from mathlens.models import Badge, OutputFormat, PipelineMode, PipelineStage, VerificationStatus
 from mathlens.pipeline.orchestrator import ExplorationResult, TokenUsage
 from mathlens.ui.console import console, format_badge, format_duration, format_topic_header
 from mathlens.ui.errors import format_error, format_refuted_error
@@ -87,41 +87,46 @@ def run_explore(
 
 def display_result(result: ExplorationResult) -> None:
     """Render an ExplorationResult to the terminal using Rich."""
+    console.print()
+
     # 1. Topic header
     console.print(format_topic_header(result.plan.topic))
+    console.print()
 
-    # 2. Verification badge
-    badge = Badge.from_status(result.verification.status)
-    console.print(format_badge(badge))
+    # 2. Verification badge — only show if verification actually ran
+    if result.verification.status != VerificationStatus.skipped:
+        badge = Badge.from_status(result.verification.status)
+        console.print(f"  {format_badge(badge)}")
 
-    # 3. If refuted: show error and return early
-    if result.verification.should_halt:
-        reason = result.verification.failure_reason or "Unknown reason"
-        console.print(format_refuted_error(reason, result.verification.lean_output))
-        return
+        # If refuted: show error and return early
+        if result.verification.should_halt:
+            reason = result.verification.failure_reason or "Unknown reason"
+            console.print(format_refuted_error(reason, result.verification.lean_output))
+            return
+        console.print()
+
+    # 3. Key insights from summary
+    if result.summary is not None:
+        for insight in result.summary.key_insights:
+            console.print(f"  [dim]•[/dim] {insight}")
+        console.print()
 
     # 4. Visualization output
     video_path = _find_rendered_video(result)
     if video_path:
-        console.print(f"[green]Video:[/green] {video_path}")
+        console.print(f"  [dim]Video:[/dim] {video_path}")
     elif result.visualization is not None:
-        console.print(f"[yellow]Render failed:[/yellow] no video produced")
+        console.print(f"  [yellow]Render failed:[/yellow] no video produced")
 
-    # 5. Key insights from summary
-    if result.summary is not None:
-        for insight in result.summary.key_insights:
-            console.print(f"  • {insight}")
-
-    # 6. Duration + usage
+    # 5. Footer — duration, tokens, mode
     if result.duration_seconds == 0.0:
-        parts = ["[cyan]Served from cache[/cyan]"]
+        parts = ["cached"]
     else:
-        parts = [f"Completed in {format_duration(result.duration_seconds)}"]
+        parts = [format_duration(result.duration_seconds)]
+    parts.append(result.meta.mode.value)
     if result.usage.has_data:
-        parts.append(
-            f"{result.usage.input_tokens:,} in / {result.usage.output_tokens:,} out tokens"
-        )
-    console.print(f"[dim]{' · '.join(parts)}[/dim]")
+        parts.append(f"{result.usage.total:,} tokens")
+    console.print(f"  [dim]{' · '.join(parts)}[/dim]")
 
 
 def _find_rendered_video(result: ExplorationResult) -> Path | None:
@@ -158,7 +163,7 @@ def _auto_open_output(result: ExplorationResult) -> None:
         _sp.run(["start", target], check=False, shell=True)
 
 
-@app.command()
+@app.command(rich_help_panel="Explore")
 def explore(
     query: str = typer.Argument(..., help="Math topic or question to explore."),
     provider: Optional[str] = typer.Option(None, "--provider", "-p", help="LLM provider: api, cli, or local."),
