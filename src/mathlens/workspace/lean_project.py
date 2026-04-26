@@ -8,7 +8,8 @@ Typical lifecycle:
     project = LeanProject(workspace_root / "lean-project")
     if not project.is_ready():
         await project.setup()       # one-time: creates project, downloads Mathlib
-    rc, stdout, stderr = await project.check_proof(lean_code, timeout=60)
+    repl = LeanREPL(project.path)
+    rc, stdout, stderr = await repl.check(lean_code, timeout=60)
 """
 
 from __future__ import annotations
@@ -142,50 +143,6 @@ class LeanProject:
 
         return True, "Mathlib project ready"
 
-    # ------------------------------------------------------------------
-    # Proof checking
-    # ------------------------------------------------------------------
-
-    async def check_proof(
-        self, lean_code: str, timeout: int = 60
-    ) -> tuple[int, str, str]:
-        """Write *lean_code* to the project and typecheck it.
-
-        Returns ``(returncode, stdout, stderr)``.
-        """
-        proof_path = self._dir / "Proof.lean"
-        atomic_write_text(proof_path, lean_code)
-
-        cmd = ["lake", "env", "lean", str(proof_path)]
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(self._dir),
-        )
-        register_process(proc)
-        try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout,
-            )
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-            unregister_process(proc)
-            raise TimeoutError(f"Lean timed out after {timeout}s")
-        except (asyncio.CancelledError, KeyboardInterrupt):
-            proc.kill()
-            await proc.wait()
-            unregister_process(proc)
-            raise
-        else:
-            unregister_process(proc)
-
-        return (
-            proc.returncode if proc.returncode is not None else 1,
-            stdout_bytes.decode(errors="replace"),
-            stderr_bytes.decode(errors="replace"),
-        )
 
     # ------------------------------------------------------------------
     # Internal
