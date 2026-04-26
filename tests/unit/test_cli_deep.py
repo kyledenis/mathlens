@@ -78,7 +78,7 @@ def _make_exploration_result() -> ExplorationResult:
 def test_deep_runs() -> None:
     """deep command exits with code 0 on a successful run."""
     mock_result = _make_exploration_result()
-    with patch("mathlens.cli.deep.run_deep", return_value=mock_result):
+    with patch("mathlens.cli.deep.run_deep", return_value=(mock_result, "api")):
         result = runner.invoke(app, ["deep", "pythagorean theorem"])
     assert result.exit_code == 0
 
@@ -86,6 +86,6 @@ def test_deep_runs() -> None:
 def test_deep_with_no_verify() -> None:
     """deep command accepts --no-verify without error."""
     mock_result = _make_exploration_result()
-    with patch("mathlens.cli.deep.run_deep", return_value=mock_result):
+    with patch("mathlens.cli.deep.run_deep", return_value=(mock_result, "api")):
         result = runner.invoke(app, ["deep", "triangles", "--no-verify"])
     assert result.exit_code == 0

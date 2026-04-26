@@ -29,10 +29,12 @@ def run_explore(
     mode: PipelineMode = PipelineMode.explore,
     quiet: bool = False,
     force: bool = False,
-) -> ExplorationResult:
-    """Build pipeline and run, showing a live spinner for each stage."""
-    orchestrator = build_pipeline(settings)
-    provider_name = settings.provider.default
+) -> tuple[ExplorationResult, str]:
+    """Build pipeline and run, showing a live spinner for each stage.
+
+    Returns (result, provider_name).
+    """
+    orchestrator, provider_name = build_pipeline(settings)
     workspace_root = Path(settings.workspace.path).expanduser()
     tracker = DurationTracker(workspace_root / "duration_history.json")
     progress = PipelineProgress(mode, tracker=tracker, provider=provider_name)
@@ -49,7 +51,7 @@ def run_explore(
                 skip_verification=no_verify,
                 force=force,
             )
-        )
+        ), provider_name
 
     # Run with live progress spinner
     stage_starts: dict[PipelineStage, float] = {}
@@ -83,10 +85,10 @@ def run_explore(
         except Exception as exc:
             raise
 
-    return result
+    return result, provider_name
 
 
-def display_result(result: ExplorationResult) -> None:
+def display_result(result: ExplorationResult, provider_name: str = "") -> None:
     """Render an ExplorationResult to the terminal using Rich."""
     console.print()
 
@@ -125,6 +127,8 @@ def display_result(result: ExplorationResult) -> None:
     else:
         parts = [format_duration(result.duration_seconds)]
     parts.append(result.meta.mode.value)
+    if provider_name:
+        parts.append(provider_name)
     if result.usage.has_data:
         parts.append(f"{result.usage.total:,} tokens")
     console.print(f"  [dim]{' · '.join(parts)}[/dim]")
@@ -205,8 +209,8 @@ def explore(
             no_open=no_open,
             quiet=quiet,
         )
-        result = run_explore(query, settings, format_override=format, no_verify=skip_verify, quiet=quiet, force=force)
-        display_result(result)
+        result, provider_name = run_explore(query, settings, format_override=format, no_verify=skip_verify, quiet=quiet, force=force)
+        display_result(result, provider_name=provider_name)
         if settings.ui.open_video_on_complete and not no_open:
             _auto_open_output(result)
     except KeyboardInterrupt:

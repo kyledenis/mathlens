@@ -51,8 +51,11 @@ def apply_flag_overrides(
         settings.ui.show_proof_excerpt = False
 
 
-def build_pipeline(settings: MathLensSettings) -> Orchestrator:
-    """Construct a fully-wired Orchestrator from *settings*."""
+def build_pipeline(settings: MathLensSettings) -> tuple[Orchestrator, str]:
+    """Construct a fully-wired Orchestrator from *settings*.
+
+    Returns (orchestrator, provider_name) — provider_name is the detected/selected provider.
+    """
     providers = build_providers(settings)
     router = build_router(settings, providers)
 
@@ -60,11 +63,24 @@ def build_pipeline(settings: MathLensSettings) -> Orchestrator:
     store = WorkspaceStore(root=workspace_root)
     search_index = SearchIndex(workspace_root / "index.db")
 
+    # Auto-detect: try configured default, then fallback
     default_name = settings.provider.default
+    provider = None
+    selected_name = default_name
+
     if default_name in providers:
         provider = providers[default_name]
-    else:
-        provider = next(iter(providers.values()))
+
+    if provider is None:
+        # Fallback to first available
+        for name in ["api", "cli", "local"]:
+            if name in providers:
+                provider = providers[name]
+                selected_name = name
+                break
+
+    if provider is None:
+        raise RuntimeError("No LLM provider available. Run `mathlens doctor` to check.")
 
     planner = Planner(provider=provider)
     verifier = Verifier(
@@ -83,4 +99,4 @@ def build_pipeline(settings: MathLensSettings) -> Orchestrator:
         summarizer=summarizer,
         store=store,
         search_index=search_index,
-    )
+    ), selected_name

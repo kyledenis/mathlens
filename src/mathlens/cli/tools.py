@@ -29,7 +29,7 @@ def run_prove(
     settings: MathLensSettings,
 ) -> VerificationResult:
     """Build pipeline and run verification on a single statement."""
-    orchestrator = build_pipeline(settings)
+    orchestrator, _provider_name = build_pipeline(settings)
     return asyncio.run(
         orchestrator._verifier.verify([statement], PipelineMode.explore)
     )
@@ -40,7 +40,7 @@ def run_viz(
     settings: MathLensSettings,
 ) -> ExplorationResult:
     """Build pipeline and run full explore with skip_verification=True."""
-    orchestrator = build_pipeline(settings)
+    orchestrator, _provider_name = build_pipeline(settings)
     return asyncio.run(
         orchestrator.run(
             query=description,

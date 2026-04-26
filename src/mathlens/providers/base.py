@@ -129,3 +129,13 @@ class LLMProvider(Protocol):
 
     async def health_check(self) -> bool:
         ...
+
+
+def is_small_model(model_name: str) -> bool:
+    """Return True if the model name suggests a small (<14B) parameter count."""
+    import re
+
+    match = re.search(r'(\d+)[bB]', model_name)
+    if match:
+        return int(match.group(1)) < 14
+    return False

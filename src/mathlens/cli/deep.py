@@ -61,8 +61,8 @@ def deep(
             no_open=no_open,
             quiet=quiet,
         )
-        result = run_deep(query, settings, format_override=format, no_verify=no_verify, quiet=quiet)
-        display_result(result)
+        result, provider_name = run_deep(query, settings, format_override=format, no_verify=no_verify, quiet=quiet)
+        display_result(result, provider_name=provider_name)
     except KeyboardInterrupt:
         cleanup()
         console.print("\n  [dim]Interrupted. All background processes stopped.[/dim]")

@@ -62,7 +62,7 @@ class TestBuildPipeline:
     def _make_mock_provider(self):
         return AsyncMock()
 
-    def test_returns_orchestrator(self, tmp_path):
+    def test_returns_orchestrator_and_provider_name(self, tmp_path):
         settings = MathLensSettings()
         settings.workspace.path = str(tmp_path)
 
@@ -75,11 +75,30 @@ class TestBuildPipeline:
         ) as mock_build_providers, patch(
             "mathlens.cli.common.build_router", return_value=mock_router
         ) as mock_build_router:
-            result = build_pipeline(settings)
+            # Default is "api" but only "local" is available — should fallback
+            result, provider_name = build_pipeline(settings)
 
         assert isinstance(result, Orchestrator)
+        assert provider_name == "local"
         mock_build_providers.assert_called_once_with(settings)
         mock_build_router.assert_called_once_with(settings, mock_providers)
+
+    def test_uses_configured_default_when_available(self, tmp_path):
+        settings = MathLensSettings()
+        settings.workspace.path = str(tmp_path)
+        settings.provider.default = "cli"
+
+        mock_provider = self._make_mock_provider()
+        mock_providers = {"cli": mock_provider, "local": mock_provider}
+        mock_router = MagicMock()
+
+        with patch("mathlens.cli.common.build_providers", return_value=mock_providers), patch(
+            "mathlens.cli.common.build_router", return_value=mock_router
+        ):
+            result, provider_name = build_pipeline(settings)
+
+        assert isinstance(result, Orchestrator)
+        assert provider_name == "cli"
 
     def test_falls_back_to_first_provider_when_default_missing(self, tmp_path):
         settings = MathLensSettings()
@@ -93,7 +112,20 @@ class TestBuildPipeline:
         with patch("mathlens.cli.common.build_providers", return_value=mock_providers), patch(
             "mathlens.cli.common.build_router", return_value=mock_router
         ):
-            result = build_pipeline(settings)
+            result, provider_name = build_pipeline(settings)
 
         assert isinstance(result, Orchestrator)
+        assert provider_name == "local"
+
+    def test_raises_when_no_providers(self, tmp_path):
+        settings = MathLensSettings()
+        settings.workspace.path = str(tmp_path)
+
+        mock_router = MagicMock()
+
+        with patch("mathlens.cli.common.build_providers", return_value={}), patch(
+            "mathlens.cli.common.build_router", return_value=mock_router
+        ):
+            with pytest.raises(RuntimeError, match="No LLM provider available"):
+                build_pipeline(settings)
 

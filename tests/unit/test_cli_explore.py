@@ -78,7 +78,7 @@ def _make_exploration_result() -> ExplorationResult:
 def test_explore_runs() -> None:
     """explore command exits with code 0 on a successful run."""
     mock_result = _make_exploration_result()
-    with patch("mathlens.cli.explore.run_explore", return_value=mock_result):
+    with patch("mathlens.cli.explore.run_explore", return_value=(mock_result, "api")):
         result = runner.invoke(app, ["explore", "pythagorean theorem"])
     assert result.exit_code == 0
 
@@ -86,6 +86,6 @@ def test_explore_runs() -> None:
 def test_explore_with_format_flag() -> None:
     """explore command accepts --format diagram without error."""
     mock_result = _make_exploration_result()
-    with patch("mathlens.cli.explore.run_explore", return_value=mock_result):
+    with patch("mathlens.cli.explore.run_explore", return_value=(mock_result, "api")):
         result = runner.invoke(app, ["explore", "circles", "--format", "diagram"])
     assert result.exit_code == 0
