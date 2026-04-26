@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field
 from pathlib import Path
 from time import monotonic
 from typing import Optional
@@ -39,6 +39,26 @@ from mathlens.workspace.store import WorkspaceStore
 
 
 @dataclass
+class TokenUsage:
+    """Aggregated token usage across all LLM calls in a pipeline run."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+    def add(self, usage: dict) -> None:
+        self.input_tokens += usage.get("input_tokens", 0)
+        self.output_tokens += usage.get("output_tokens", 0)
+
+    @property
+    def total(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+    @property
+    def has_data(self) -> bool:
+        return self.total > 0
+
+
+@dataclass
 class ExplorationResult:
     """Full result of a single pipeline run."""
 
@@ -48,6 +68,7 @@ class ExplorationResult:
     summary: Optional[Summary]
     meta: ExplorationMeta
     duration_seconds: float
+    usage: TokenUsage = dataclass_field(default_factory=TokenUsage)
 
 
 # ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@ from mathlens.cli.common import apply_flag_overrides, build_pipeline
 from mathlens.config.settings import MathLensSettings
 from mathlens.lifecycle import cleanup, install_signal_handlers
 from mathlens.models import Badge, OutputFormat, PipelineMode, PipelineStage
-from mathlens.pipeline.orchestrator import ExplorationResult
+from mathlens.pipeline.orchestrator import ExplorationResult, TokenUsage
 from mathlens.ui.console import console, format_badge, format_duration, format_topic_header
 from mathlens.ui.errors import format_error, format_refuted_error
 from mathlens.ui.progress import PipelineProgress
@@ -106,8 +106,13 @@ def display_result(result: ExplorationResult) -> None:
         for insight in result.summary.key_insights:
             console.print(f"  • {insight}")
 
-    # 6. Duration
-    console.print(f"[dim]Completed in {format_duration(result.duration_seconds)}[/dim]")
+    # 6. Duration + usage
+    parts = [f"Completed in {format_duration(result.duration_seconds)}"]
+    if result.usage.has_data:
+        parts.append(
+            f"{result.usage.input_tokens:,} in / {result.usage.output_tokens:,} out tokens"
+        )
+    console.print(f"[dim]{' · '.join(parts)}[/dim]")
 
 
 def _find_rendered_video(result: ExplorationResult) -> Path | None:
