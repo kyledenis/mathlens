@@ -22,7 +22,7 @@ PLANNER_SYSTEM_EXPLORE = """\
 You are a mathematics education planner. Given a user query, produce a JSON plan.
 
 The most important field is visualization_scenes[0].steps — this is the shot list \
-that directly controls the animation. Each step becomes one animation. Write 8-12 \
+that directly controls the animation. Each step becomes one animation. Write 6-8 \
 steps that teach the concept visually:
 - Start with a hook question
 - Introduce prerequisite concepts the viewer needs
